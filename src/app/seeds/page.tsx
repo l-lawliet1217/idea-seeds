@@ -20,6 +20,15 @@ export default function SeedsPage() {
       });
   }, []);
 
+  async function handleDelete(id: string) {
+    await fetch("/api/seeds", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    setSeeds((prev) => prev.filter((s) => s.id !== id));
+  }
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
@@ -69,7 +78,7 @@ export default function SeedsPage() {
         </div>
       ) : (
         <>
-          {tab === "all" && <AllTab seeds={seeds} />}
+          {tab === "all" && <AllTab seeds={seeds} onDelete={handleDelete} />}
           {tab === "service_ideas" && <ServiceTab seeds={seeds} />}
           {tab === "pest" && <PestTab seeds={seeds} />}
           {tab === "jobs" && <JobsTab seeds={seeds} />}
@@ -80,7 +89,18 @@ export default function SeedsPage() {
 }
 
 // 全て: 送ったメッセージをシンプルに一覧
-function AllTab({ seeds }: { seeds: Seed[] }) {
+function AllTab({ seeds, onDelete }: { seeds: Seed[]; onDelete: (id: string) => void }) {
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  function handleDelete(id: string) {
+    if (confirmId === id) {
+      onDelete(id);
+      setConfirmId(null);
+    } else {
+      setConfirmId(id);
+    }
+  }
+
   return (
     <div className="space-y-2">
       {seeds.map((seed) => {
@@ -91,11 +111,23 @@ function AllTab({ seeds }: { seeds: Seed[] }) {
         return (
           <div
             key={seed.id}
-            className="flex items-start justify-between border border-gray-100 rounded-xl bg-white px-4 py-3 hover:border-gray-200 transition-colors"
+            className="flex items-start justify-between border border-gray-100 rounded-xl bg-white px-4 py-3 hover:border-gray-200 transition-colors group"
           >
             <p className="text-sm text-gray-900 leading-relaxed flex-1 pr-4">{seed.raw_input}</p>
             <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-              <span className="text-xs text-gray-300">{date}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-300">{date}</span>
+                <button
+                  onClick={() => handleDelete(seed.id)}
+                  className={`text-xs px-2 py-0.5 rounded-lg transition-colors ${
+                    confirmId === seed.id
+                      ? "bg-red-100 text-red-500"
+                      : "opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400"
+                  }`}
+                >
+                  {confirmId === seed.id ? "本当に削除" : "削除"}
+                </button>
+              </div>
               {seed.tags && (
                 <div className="flex flex-wrap gap-1 justify-end">
                   {seed.tags.slice(0, 2).map((tag) => (
