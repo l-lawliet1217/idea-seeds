@@ -1,8 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import { ANALYSIS_SYSTEM_PROMPT, COMBINATION_PROMPT } from "@/lib/prompts";
 import type { CombinationSuggestion } from "@/types";
+
+export const dynamic = "force-dynamic";
 
 const client = new Anthropic();
 
@@ -35,6 +37,8 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+
+  const supabase = getSupabase();
 
   // 2. Supabaseに保存
   const { data: savedSeed, error: saveError } = await supabase
