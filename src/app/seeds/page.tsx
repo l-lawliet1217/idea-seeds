@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Seed } from "@/types";
 
-type Tab = "service_ideas" | "pest" | "jobs" | "all";
+type Tab = "all" | "service_ideas" | "pest" | "jobs";
 
 export default function SeedsPage() {
   const [seeds, setSeeds] = useState<Seed[]>([]);
@@ -38,7 +38,7 @@ export default function SeedsPage() {
       <div className="flex gap-1 mb-6 border-b border-gray-100">
         {(
           [
-            { key: "all", label: "すべて" },
+            { key: "all", label: "全て" },
             { key: "service_ideas", label: "サービス案" },
             { key: "pest", label: "PEST" },
             { key: "jobs", label: "Jobs" },
@@ -68,95 +68,128 @@ export default function SeedsPage() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-4">
-          {seeds.map((seed) => (
-            <SeedCard key={seed.id} seed={seed} tab={tab} />
-          ))}
-        </div>
+        <>
+          {tab === "all" && <AllTab seeds={seeds} />}
+          {tab === "service_ideas" && <ServiceTab seeds={seeds} />}
+          {tab === "pest" && <PestTab seeds={seeds} />}
+          {tab === "jobs" && <JobsTab seeds={seeds} />}
+        </>
       )}
     </div>
   );
 }
 
-function SeedCard({ seed, tab }: { seed: Seed; tab: Tab }) {
-  const date = new Date(seed.created_at).toLocaleDateString("ja-JP", {
-    month: "short",
-    day: "numeric",
-  });
+// 全て: 送ったメッセージをシンプルに一覧
+function AllTab({ seeds }: { seeds: Seed[] }) {
+  return (
+    <div className="space-y-2">
+      {seeds.map((seed) => {
+        const date = new Date(seed.created_at).toLocaleDateString("ja-JP", {
+          month: "short",
+          day: "numeric",
+        });
+        return (
+          <div
+            key={seed.id}
+            className="flex items-start justify-between border border-gray-100 rounded-xl bg-white px-4 py-3 hover:border-gray-200 transition-colors"
+          >
+            <p className="text-sm text-gray-900 leading-relaxed flex-1 pr-4">{seed.raw_input}</p>
+            <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+              <span className="text-xs text-gray-300">{date}</span>
+              {seed.tags && (
+                <div className="flex flex-wrap gap-1 justify-end">
+                  {seed.tags.slice(0, 2).map((tag) => (
+                    <span key={tag} className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// サービス案: 全タネのサービス案をフラットに一覧
+function ServiceTab({ seeds }: { seeds: Seed[] }) {
+  const items = seeds.flatMap((seed) =>
+    (seed.service_ideas ?? []).map((s) => ({ ...s, source: seed.raw_input }))
+  );
 
   return (
-    <div className="border border-gray-200 rounded-2xl bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between mb-3">
-        <p className="text-sm font-medium text-gray-900 flex-1 leading-relaxed pr-4">
-          {seed.raw_input}
-        </p>
-        <span className="text-xs text-gray-300 flex-shrink-0">{date}</span>
-      </div>
-
-      {seed.tags && (
-        <div className="flex flex-wrap gap-1 mb-3">
-          {seed.tags.map((tag) => (
-            <span key={tag} className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-              {tag}
-            </span>
-          ))}
+    <div className="space-y-2">
+      {items.map((item, i) => (
+        <div key={i} className="border border-gray-100 rounded-xl bg-white px-4 py-3 hover:border-gray-200 transition-colors">
+          <div className="text-sm font-medium text-gray-900">{item.name}</div>
+          <div className="text-xs text-gray-600 mt-1 leading-relaxed">{item.description}</div>
+          <div className="text-xs text-gray-400 mt-1">対象: {item.target}</div>
+          <div className="text-xs text-gray-300 mt-2 border-t border-gray-50 pt-2">元: {item.source}</div>
         </div>
-      )}
+      ))}
+    </div>
+  );
+}
 
-      {(tab === "all" || tab === "service_ideas") && seed.service_ideas && (
-        <div className="mt-3">
-          <div className="text-xs font-semibold text-gray-400 mb-2">サービス案</div>
-          <div className="space-y-2">
-            {seed.service_ideas.map((s, i) => (
-              <div key={i} className="bg-gray-50 rounded-xl p-3">
-                <div className="text-xs font-medium text-gray-800">{s.name}</div>
-                <div className="text-xs text-gray-500 mt-0.5 leading-relaxed">{s.description}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {(tab === "all" || tab === "pest") && seed.pest && (
-        <div className="mt-3">
-          <div className="text-xs font-semibold text-gray-400 mb-2">PEST</div>
+// PEST: タネごとにPESTを表示
+function PestTab({ seeds }: { seeds: Seed[] }) {
+  return (
+    <div className="space-y-4">
+      {seeds.filter((s) => s.pest).map((seed) => (
+        <div key={seed.id} className="border border-gray-100 rounded-xl bg-white p-4">
+          <p className="text-xs text-gray-400 mb-3 leading-relaxed">{seed.raw_input}</p>
           <div className="grid grid-cols-2 gap-2">
             {(
               [
-                { key: "political", label: "P" },
-                { key: "economic", label: "E" },
-                { key: "social", label: "S" },
-                { key: "technological", label: "T" },
+                { key: "political", label: "P（政治）" },
+                { key: "economic", label: "E（経済）" },
+                { key: "social", label: "S（社会）" },
+                { key: "technological", label: "T（技術）" },
               ] as const
             ).map(({ key, label }) => (
-              <div key={key} className="bg-gray-50 rounded-xl p-2.5">
-                <div className="text-xs font-semibold text-gray-400 mb-0.5">{label}</div>
+              <div key={key} className="bg-gray-50 rounded-xl p-3">
+                <div className="text-xs font-semibold text-gray-400 mb-1">{label}</div>
                 <div className="text-xs text-gray-700 leading-relaxed">{seed.pest![key]}</div>
               </div>
             ))}
           </div>
         </div>
-      )}
+      ))}
+    </div>
+  );
+}
 
-      {(tab === "all" || tab === "jobs") && seed.jobs && (
-        <div className="mt-3">
-          <div className="text-xs font-semibold text-gray-400 mb-2">Jobs</div>
-          <div className="space-y-1.5">
+// Jobs: タネごとにJobs理論を表示
+function JobsTab({ seeds }: { seeds: Seed[] }) {
+  return (
+    <div className="space-y-4">
+      {seeds.filter((s) => s.jobs).map((seed) => (
+        <div key={seed.id} className="border border-gray-100 rounded-xl bg-white p-4">
+          <p className="text-xs text-gray-400 mb-3 leading-relaxed">{seed.raw_input}</p>
+          <div className="space-y-2">
             {(
               [
-                { key: "functional", label: "機能" },
-                { key: "emotional", label: "感情" },
-                { key: "social", label: "社会" },
+                { key: "functional", label: "機能的ジョブ" },
+                { key: "emotional", label: "感情的ジョブ" },
+                { key: "social", label: "社会的ジョブ" },
               ] as const
             ).map(({ key, label }) => (
-              <div key={key} className="flex gap-2 text-xs">
-                <span className="text-gray-400 w-8 flex-shrink-0">{label}</span>
-                <span className="text-gray-700">{seed.jobs![key].join("、")}</span>
+              <div key={key}>
+                <div className="text-xs font-semibold text-gray-400 mb-1">{label}</div>
+                <div className="flex flex-wrap gap-1">
+                  {seed.jobs![key].map((job, i) => (
+                    <span key={i} className="text-xs bg-gray-50 text-gray-700 border border-gray-100 px-2 py-1 rounded-lg">
+                      {job}
+                    </span>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
