@@ -120,7 +120,7 @@ export default function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && e.shiftKey) {
                 e.preventDefault();
                 handleSubmit(e);
               }
@@ -137,7 +137,7 @@ export default function ChatPage() {
             送信
           </button>
         </div>
-        <p className="text-xs text-gray-300 mt-1">Enter で送信 / Shift+Enter で改行</p>
+        <p className="text-xs text-gray-300 mt-1">Shift+Enter で送信 / Enter で改行</p>
       </form>
     </div>
   );
