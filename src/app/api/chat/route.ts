@@ -1,14 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
-import { ANALYSIS_SYSTEM_PROMPT, COMBINATION_PROMPT } from "@/lib/prompts";
+import { ANALYSIS_SYSTEM_PROMPT, COMBINATION_PROMPT, SIMILARITY_PROMPT } from "@/lib/prompts";
 import type { CombinationSuggestion } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { input } = await req.json();
+    const { input, force } = await req.json();
 
     if (!input?.trim()) {
       return NextResponse.json({ error: "入力が空です" }, { status: 400 });
@@ -29,8 +29,38 @@ export async function POST(req: NextRequest) {
     }
 
     const client = new Anthropic();
+    const supabase = getSupabase();
 
-    // 1. Claudeでフレームワーク分析
+    // 1. 類似タネチェック（force=trueの場合はスキップ）
+    if (!force) {
+      const { data: allSeeds } = await supabase
+        .from("seeds")
+        .select("id, raw_input")
+        .order("created_at", { ascending: false })
+        .limit(30);
+
+      if (allSeeds && allSeeds.length > 0) {
+        const similarityMessage = await client.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 500,
+          messages: [{ role: "user", content: SIMILARITY_PROMPT(input, allSeeds) }],
+        });
+        const similarityText =
+          similarityMessage.content[0].type === "text"
+            ? similarityMessage.content[0].text
+            : "[]";
+        try {
+          const similarSeeds = JSON.parse(similarityText);
+          if (similarSeeds.length > 0) {
+            return NextResponse.json({ similar: similarSeeds }, { status: 409 });
+          }
+        } catch {
+          // パース失敗時は無視して続行
+        }
+      }
+    }
+
+    // 2. Claudeでフレームワーク分析
     const analysisMessage = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 2000,
@@ -53,9 +83,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const supabase = getSupabase();
-
-    // 2. Supabaseに保存
+    // 3. Supabaseに保存
     const { data: savedSeed, error: saveError } = await supabase
       .from("seeds")
       .insert({
@@ -76,7 +104,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. 既存タネを取得して組み合わせ提案
+    // 4. 既存タネを取得して組み合わせ提案
     const { data: existingSeeds } = await supabase
       .from("seeds")
       .select("id, raw_input")

@@ -8,6 +8,8 @@ type Message = {
   role: "user" | "assistant";
   content: string;
   result?: AnalysisResult;
+  similarSeeds?: { id: string; raw_input: string }[];
+  pendingInput?: string;
 };
 
 export default function ChatPage() {
@@ -20,23 +22,31 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!input.trim() || loading) return;
-
-    const userMessage = input.trim();
-    setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+  async function postToApi(userMessage: string, force = false) {
     setLoading(true);
-
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: userMessage }),
+        body: JSON.stringify({ input: userMessage, force }),
       });
 
       const data = await res.json();
+
+      if (res.status === 409) {
+        // 類似タネあり
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "似たタネがすでにあります。それでも追加しますか？",
+            similarSeeds: data.similar,
+            pendingInput: userMessage,
+          },
+        ]);
+        return;
+      }
+
       if (!res.ok) throw new Error(data.error);
 
       setMessages((prev) => [
@@ -58,6 +68,20 @@ export default function ChatPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!input.trim() || loading) return;
+    const userMessage = input.trim();
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    await postToApi(userMessage);
+  }
+
+  async function handleForceAdd(pendingInput: string) {
+    setMessages((prev) => [...prev, { role: "user", content: "（それでも追加）" }]);
+    await postToApi(pendingInput, true);
   }
 
   return (
@@ -98,6 +122,12 @@ export default function ChatPage() {
               ) : (
                 <div className="space-y-4 w-full">
                   <p className="text-sm text-gray-400">{msg.content}</p>
+                  {msg.similarSeeds && msg.pendingInput && (
+                    <SimilarWarning
+                      similarSeeds={msg.similarSeeds}
+                      onForceAdd={() => handleForceAdd(msg.pendingInput!)}
+                    />
+                  )}
                   {msg.result && <AnalysisCard result={msg.result} />}
                 </div>
               )}
@@ -139,6 +169,34 @@ export default function ChatPage() {
         </div>
         <p className="text-xs text-gray-300 mt-1">Shift+Enter で送信 / Enter で改行</p>
       </form>
+    </div>
+  );
+}
+
+function SimilarWarning({
+  similarSeeds,
+  onForceAdd,
+}: {
+  similarSeeds: { id: string; raw_input: string }[];
+  onForceAdd: () => void;
+}) {
+  return (
+    <div className="border border-amber-200 bg-amber-50 rounded-2xl p-4">
+      <p className="text-xs font-medium text-amber-700 mb-2">以下のタネと似ています：</p>
+      <ul className="space-y-1 mb-3">
+        {similarSeeds.map((s) => (
+          <li key={s.id} className="text-xs text-amber-800 flex gap-1">
+            <span className="text-amber-400">—</span>
+            {s.raw_input}
+          </li>
+        ))}
+      </ul>
+      <button
+        onClick={onForceAdd}
+        className="text-xs px-3 py-1.5 bg-amber-700 text-white rounded-lg hover:bg-amber-800 transition-colors"
+      >
+        それでも追加する
+      </button>
     </div>
   );
 }

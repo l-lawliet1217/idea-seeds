@@ -52,3 +52,25 @@ ${existingSeeds.map((s, i) => `${i + 1}. ${s.raw_input}`).join("\n")}
 ]
 
 関連性がない場合は空配列 [] を返してください。`;
+
+export const SIMILARITY_PROMPT = (
+  newInput: string,
+  existingSeeds: { id: string; raw_input: string }[]
+) => `
+新しい気づき:「${newInput}」
+
+既存のタネ:
+${existingSeeds.map((s, i) => `${i + 1}. [${s.id}] ${s.raw_input}`).join("\n")}
+
+新しい気づきと既存のタネを比較して、本質的に同じテーマ・視点を扱っているものがあれば返してください。
+表現が違っても、指摘している社会変化・市場トレンドが実質同じであれば「類似」と判断してください。
+
+必ず以下のJSON形式のみで返してください（コードブロックなし、説明文なし）:
+[
+  {
+    "id": "類似タネのID",
+    "raw_input": "類似タネの内容"
+  }
+]
+
+類似するものがなければ空配列 [] を返してください。`;
