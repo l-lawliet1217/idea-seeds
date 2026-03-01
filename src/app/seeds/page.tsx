@@ -165,49 +165,104 @@ function ServiceTab({ seeds }: { seeds: Seed[] }) {
   );
 }
 
-// PEST: タネごとにPESTを表示
+const PEST_KEYS = [
+  { key: "political", label: "P（政治）" },
+  { key: "economic", label: "E（経済）" },
+  { key: "social", label: "S（社会）" },
+  { key: "technological", label: "T（技術）" },
+] as const;
+
+const JOB_KEYS = [
+  { key: "functional", label: "機能的ジョブ" },
+  { key: "emotional", label: "感情的ジョブ" },
+  { key: "social", label: "社会的ジョブ" },
+] as const;
+
+// PEST: P/E/S/T で絞り込み表示
 function PestTab({ seeds }: { seeds: Seed[] }) {
+  const [filter, setFilter] = useState<"political" | "economic" | "social" | "technological" | null>(null);
+  const filtered = seeds.filter((s) => s.pest);
+  const activeKeys = filter ? PEST_KEYS.filter((k) => k.key === filter) : PEST_KEYS;
+
   return (
-    <div className="space-y-4">
-      {seeds.filter((s) => s.pest).map((seed) => (
-        <div key={seed.id} className="border border-gray-100 rounded-xl bg-white p-4">
-          <p className="text-xs text-gray-400 mb-3 leading-relaxed">{seed.raw_input}</p>
-          <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                { key: "political", label: "P（政治）" },
-                { key: "economic", label: "E（経済）" },
-                { key: "social", label: "S（社会）" },
-                { key: "technological", label: "T（技術）" },
-              ] as const
-            ).map(({ key, label }) => (
-              <div key={key} className="bg-gray-50 rounded-xl p-3">
-                <div className="text-xs font-semibold text-gray-400 mb-1">{label}</div>
-                <div className="text-xs text-gray-700 leading-relaxed">{seed.pest![key]}</div>
+    <div>
+      <div className="flex gap-1 mb-4">
+        <button
+          onClick={() => setFilter(null)}
+          className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+            filter === null ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-400 hover:text-gray-600"
+          }`}
+        >
+          全て
+        </button>
+        {PEST_KEYS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setFilter(filter === key ? null : key)}
+            className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+              filter === key ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-400 hover:text-gray-600"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-3">
+        {filtered.map((seed) => (
+          <div key={seed.id} className={`border border-gray-100 rounded-xl bg-white p-4 ${filter ? "" : "grid grid-cols-2 gap-2"}`}>
+            {filter ? (
+              <div className="bg-gray-50 rounded-xl p-3">
+                <div className="text-xs font-semibold text-gray-400 mb-1">{activeKeys[0].label}</div>
+                <div className="text-xs text-gray-700 leading-relaxed">{seed.pest![activeKeys[0].key]}</div>
               </div>
-            ))}
+            ) : (
+              PEST_KEYS.map(({ key, label }) => (
+                <div key={key} className="bg-gray-50 rounded-xl p-3">
+                  <div className="text-xs font-semibold text-gray-400 mb-1">{label}</div>
+                  <div className="text-xs text-gray-700 leading-relaxed">{seed.pest![key]}</div>
+                </div>
+              ))
+            )}
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
 
-// Jobs: タネごとにJobs理論を表示
+// Jobs: 機能/感情/社会で絞り込み表示
 function JobsTab({ seeds }: { seeds: Seed[] }) {
+  const [filter, setFilter] = useState<"functional" | "emotional" | "social" | null>(null);
+  const filtered = seeds.filter((s) => s.jobs);
+  const activeKeys = filter ? JOB_KEYS.filter((k) => k.key === filter) : JOB_KEYS;
+
   return (
-    <div className="space-y-4">
-      {seeds.filter((s) => s.jobs).map((seed) => (
-        <div key={seed.id} className="border border-gray-100 rounded-xl bg-white p-4">
-          <p className="text-xs text-gray-400 mb-3 leading-relaxed">{seed.raw_input}</p>
-          <div className="space-y-2">
-            {(
-              [
-                { key: "functional", label: "機能的ジョブ" },
-                { key: "emotional", label: "感情的ジョブ" },
-                { key: "social", label: "社会的ジョブ" },
-              ] as const
-            ).map(({ key, label }) => (
+    <div>
+      <div className="flex gap-1 mb-4">
+        <button
+          onClick={() => setFilter(null)}
+          className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+            filter === null ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-400 hover:text-gray-600"
+          }`}
+        >
+          全て
+        </button>
+        {JOB_KEYS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setFilter(filter === key ? null : key)}
+            className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+              filter === key ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-400 hover:text-gray-600"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-3">
+        {filtered.map((seed) => (
+          <div key={seed.id} className="border border-gray-100 rounded-xl bg-white p-4 space-y-2">
+            {activeKeys.map(({ key, label }) => (
               <div key={key}>
                 <div className="text-xs font-semibold text-gray-400 mb-1">{label}</div>
                 <div className="flex flex-wrap gap-1">
@@ -220,8 +275,9 @@ function JobsTab({ seeds }: { seeds: Seed[] }) {
               </div>
             ))}
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
+
