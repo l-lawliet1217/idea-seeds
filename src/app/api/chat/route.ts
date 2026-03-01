@@ -6,6 +6,18 @@ import type { CombinationSuggestion } from "@/types";
 
 export const dynamic = "force-dynamic";
 
+function extractJson(text: string): string {
+  const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (match) return match[1].trim();
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+  if (first !== -1 && last !== -1) return text.slice(first, last + 1);
+  const firstArr = text.indexOf("[");
+  const lastArr = text.lastIndexOf("]");
+  if (firstArr !== -1 && lastArr !== -1) return text.slice(firstArr, lastArr + 1);
+  return text.trim();
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { input, force } = await req.json();
@@ -50,7 +62,7 @@ export async function POST(req: NextRequest) {
             ? similarityMessage.content[0].text
             : "[]";
         try {
-          const similarSeeds = JSON.parse(similarityText);
+          const similarSeeds = JSON.parse(extractJson(similarityText));
           if (similarSeeds.length > 0) {
             return NextResponse.json({ similar: similarSeeds }, { status: 409 });
           }
@@ -75,7 +87,7 @@ export async function POST(req: NextRequest) {
 
     let analysis;
     try {
-      analysis = JSON.parse(analysisText);
+      analysis = JSON.parse(extractJson(analysisText));
     } catch {
       return NextResponse.json(
         { error: "分析結果のパースに失敗しました" },
@@ -132,7 +144,7 @@ export async function POST(req: NextRequest) {
           : "[]";
 
       try {
-        combinations = JSON.parse(combinationText);
+        combinations = JSON.parse(extractJson(combinationText));
       } catch {
         combinations = [];
       }
