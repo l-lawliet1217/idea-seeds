@@ -100,7 +100,15 @@ export type GeneratedContent = {
 };
 
 type GenerateContentInput = {
-  contentType: "blog" | "whitepaper" | "proposal" | "call_script";
+  contentType:
+    | "blog"
+    | "whitepaper"
+    | "proposal"
+    | "call_script"
+    | "youtube_script"
+    | "sns_x"
+    | "sns_facebook"
+    | "sns_linkedin";
   segmentName: string | null;
   keywords: string[];
   companyName?: string;
@@ -121,6 +129,20 @@ const CONTENT_INSTRUCTIONS: Record<GenerateContentInput["contentType"], string> 
   call_script: `テレアポ用トークスクリプトをMarkdownで書いてください。
 - 構成: 挨拶とフック(15秒) / 課題ヒアリング質問3つ / 提供価値の説明 / よくある断り文句への切り返し3パターン / クロージング(アポ打診)
 - 話し言葉で、1ターンは短く`,
+  youtube_script: `YouTube動画(8-10分想定)の台本をMarkdownで書いてください。
+- 構成: フック(冒頭15秒) / イントロ / 本編3-4チャプター(チャプターごとにh2) / まとめ / CTA(概要欄のホワイトペーパー誘導)
+- 話し言葉。カメラに向かって一人で話す想定
+- 参照する既存コンテンツがあればその内容に忠実に`,
+  sns_x: `X(旧Twitter)の投稿文を3案、Markdownで書いてください。
+- 各案140字以内、番号付き見出し(h2)で区切る
+- 1案は問題提起型、1案はデータ引用型、1案はノウハウ型
+- 末尾に記事リンクのプレースホルダ [記事URL] を置く。ハッシュタグは2個まで`,
+  sns_facebook: `Facebookの投稿文を1案、Markdownで書いてください。
+- 300-500字。冒頭2行で惹きつけ、改行を多めに読みやすく
+- 末尾に記事リンクのプレースホルダ [記事URL]`,
+  sns_linkedin: `LinkedInの投稿文を1案、Markdownで書いてください。
+- 400-600字。ビジネス意思決定者向けのトーンで、具体的な数字や示唆を入れる
+- 末尾に記事リンクのプレースホルダ [記事URL]`,
 };
 
 export async function generateContent(

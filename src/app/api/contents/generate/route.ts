@@ -3,7 +3,16 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { generateContent } from "@/lib/claude";
 import { extractDomain } from "@/lib/serp";
 
-const GENERATABLE_TYPES = ["blog", "whitepaper", "proposal", "call_script"] as const;
+const GENERATABLE_TYPES = [
+  "blog",
+  "whitepaper",
+  "proposal",
+  "call_script",
+  "youtube_script",
+  "sns_x",
+  "sns_facebook",
+  "sns_linkedin",
+] as const;
 type GeneratableType = (typeof GENERATABLE_TYPES)[number];
 
 export const maxDuration = 300;
@@ -23,8 +32,12 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  if (contentType !== "proposal" && !body.segment_id) {
-    return NextResponse.json({ error: "segment_id は必須です" }, { status: 400 });
+  // proposal以外は、セグメント直指定か派生元コンテンツのどちらかが必要
+  if (contentType !== "proposal" && !body.segment_id && !body.parent_content_id) {
+    return NextResponse.json(
+      { error: "segment_id または parent_content_id を指定してください" },
+      { status: 400 }
+    );
   }
 
   const supabase = getSupabaseAdmin();
@@ -33,6 +46,24 @@ export async function POST(req: Request) {
   let segmentName: string | null = null;
   let segmentId: string | null = body.segment_id ?? null;
   let keywords: { id: string; keyword: string }[] = [];
+
+  // 派生元コンテンツ(Blog→台本/SNS、ホワイトペーパー→Blog等)
+  let parentSummary: string | undefined;
+  if (body.parent_content_id) {
+    const { data: parent } = await supabase
+      .from("contents")
+      .select("title, body, segment_id")
+      .eq("id", body.parent_content_id)
+      .single();
+    if (!parent) {
+      return NextResponse.json(
+        { error: "派生元コンテンツが見つかりません" },
+        { status: 404 }
+      );
+    }
+    parentSummary = `${parent.title}\n${(parent.body ?? "").slice(0, 2000)}`;
+    if (!segmentId) segmentId = parent.segment_id;
+  }
 
   // 企業情報(proposal用)
   let companyName: string | undefined;
@@ -97,19 +128,6 @@ export async function POST(req: Request) {
         .eq("is_tracked", true)
         .limit(15);
       keywords = data ?? [];
-    }
-  }
-
-  // 派生元コンテンツ(Blogにホワイトペーパーを挿入する等)
-  let parentSummary: string | undefined;
-  if (body.parent_content_id) {
-    const { data: parent } = await supabase
-      .from("contents")
-      .select("title, body")
-      .eq("id", body.parent_content_id)
-      .single();
-    if (parent) {
-      parentSummary = `${parent.title}\n${(parent.body ?? "").slice(0, 1500)}`;
     }
   }
 

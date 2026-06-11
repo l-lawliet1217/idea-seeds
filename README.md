@@ -47,9 +47,11 @@ npm run dev
 | 1. 企業管理(セグメント / gBizINFO取り込み / スコアリング / 担当者・関連会社) | 実装済み |
 | 2. SEO(キーワード生成 / 順位トラッキング / Blog・WP生成 / WordPress公開) | 実装済み |
 | 3. 企業別提案書(SERPデータを引用した提案書生成) | 実装済み(Ahrefs連携は未) |
+| 4. YouTube(台本生成のみ) / 5. SNS(投稿文生成のみ) | 一部実装 |
 | 6. テレアポ(スクリプト生成 / リスト生成 / Zoom Phone click-to-call / 結果記録) | 実装済み |
 | 認証(Supabase Auth マジックリンク + ドメイン制限) | 実装済み |
-| EDINET役員取得 / 4. YouTube / 5. SNS / 7. GiversNetwork移植 | 未着手 |
+| セットアップ診断(/setup で設定状態を確認可能) | 実装済み |
+| EDINET役員取得 / 動画編集・YouTube連携 / SNS投稿連携 / 7. GiversNetwork移植 | 未着手 |
 
 ## 運用メモ
 

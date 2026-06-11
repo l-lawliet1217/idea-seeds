@@ -36,16 +36,26 @@ function LoginForm() {
       return;
     }
     setLoading(true);
-    const { error } = await getSupabase().auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${location.origin}/auth/callback` },
-    });
-    setLoading(false);
-    if (error) {
-      setError(error.message);
-      return;
+    try {
+      const { error } = await getSupabase().auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: `${location.origin}/auth/callback` },
+      });
+      if (error) throw error;
+      setSent(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // ネットワーク到達不可 = Supabase未設定 or プロジェクト停止
+      if (/fetch/i.test(message)) {
+        setError(
+          "Supabaseに接続できません。プロジェクトの停止や環境変数の設定漏れが考えられます。"
+        );
+      } else {
+        setError(message);
+      }
+    } finally {
+      setLoading(false);
     }
-    setSent(true);
   }
 
   return (
@@ -83,6 +93,14 @@ function LoginForm() {
           {error && <p className="text-sm text-red-600">{error}</p>}
         </form>
       )}
+
+      <p className="text-xs text-gray-400 text-center mt-4">
+        ログインできない場合は{" "}
+        <a href="/setup" className="underline underline-offset-2 hover:text-gray-600">
+          セットアップ診断
+        </a>{" "}
+        で設定状態を確認してください
+      </p>
     </div>
   );
 }
