@@ -2,7 +2,36 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import GiversNav from "./givers-nav";
+import { daysUntilBirthday } from "@/lib/givers";
 import { FRIEND_TIERS, FriendTier, GiverFriend } from "@/types";
+
+function BirthdayBanner() {
+  const [upcoming, setUpcoming] = useState<{ name: string; days: number }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/givers/friends")
+      .then((r) => r.json())
+      .then((data: GiverFriend[]) => {
+        if (!Array.isArray(data)) return;
+        const list = data
+          .map((f) => ({ name: f.name, days: daysUntilBirthday(f.birthday) }))
+          .filter((b): b is { name: string; days: number } => b.days !== null && b.days <= 14)
+          .sort((a, b) => a.days - b.days);
+        setUpcoming(list);
+      });
+  }, []);
+
+  if (upcoming.length === 0) return null;
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-800">
+      直近の誕生日:{" "}
+      {upcoming
+        .map((b) => `${b.name}(${b.days === 0 ? "今日" : `${b.days}日後`})`)
+        .join("、")}
+    </div>
+  );
+}
 
 function daysAgo(date: string | null): string {
   if (!date) return "—";
@@ -70,6 +99,8 @@ export default function GiversPage() {
         <h1 className="text-xl font-semibold">GiversNetwork</h1>
         <span className="text-sm text-gray-400">Friends ({friends.length}名)</span>
       </div>
+      <GiversNav />
+      <BirthdayBanner />
 
       <form
         onSubmit={addFriend}

@@ -253,6 +253,12 @@ export type GiverFriend = {
   tags: string[] | null;
   notes: string | null;
   company_id: string | null;
+  wants_to_meet: string | null;
+  needs: string | null;
+  contributions: string | null;
+  phase: string | null;
+  personality: string | null;
+  contact_cycle_months: number;
   created_at: string;
 };
 
@@ -262,4 +268,77 @@ export type GiverContactLog = {
   contacted_at: string;
   channel: string | null;
   memo: string | null;
+  duration_minutes: number | null;
+};
+
+export type IntroStatus =
+  | "candidate"
+  | "pitched"
+  | "connected"
+  | "completed"
+  | "rejected";
+
+export const INTRO_STATUS_LABELS: Record<IntroStatus, string> = {
+  candidate: "候補",
+  pitched: "個人打診",
+  connected: "接続",
+  completed: "完了",
+  rejected: "取り下げ",
+};
+
+export type GiverIntroduction = {
+  id: string;
+  friend_a_id: string;
+  friend_b_id: string;
+  status: IntroStatus;
+  reason: string | null;
+  created_at: string;
+  friend_a?: { id: string; name: string; company: string | null };
+  friend_b?: { id: string; name: string; company: string | null };
+};
+
+export type OutreachKind = "pitch" | "connection" | "birthday" | "follow";
+
+export const OUTREACH_KIND_LABELS: Record<OutreachKind, string> = {
+  pitch: "紹介打診",
+  connection: "接続",
+  birthday: "誕生日",
+  follow: "フォロー",
+};
+
+export type GiverOutreach = {
+  id: string;
+  friend_id: string;
+  kind: OutreachKind;
+  message: string;
+  status: "draft" | "sent";
+  created_at: string;
+  sent_at: string | null;
+  givers_friends?: { id: string; name: string };
+};
+
+export type TriggerStatus = "open" | "in_progress" | "done";
+
+export const TRIGGER_STATUS_LABELS: Record<TriggerStatus, string> = {
+  open: "未対応",
+  in_progress: "対応中",
+  done: "対応済",
+};
+
+export type GiverTrigger = {
+  id: string;
+  friend_id: string;
+  trigger_type: string | null;
+  content: string;
+  status: TriggerStatus;
+  source: string | null;
+  created_at: string;
+  givers_friends?: { id: string; name: string };
+};
+
+export type MatchCandidate = {
+  a: { id: string; name: string; company: string | null };
+  b: { id: string; name: string; company: string | null };
+  score: number;
+  reason: string;
 };
