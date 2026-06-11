@@ -11,7 +11,24 @@ import {
   Segment,
 } from "@/types";
 
-const GENERATABLE: ContentType[] = ["blog", "whitepaper", "proposal", "call_script"];
+const GENERATABLE: ContentType[] = [
+  "blog",
+  "whitepaper",
+  "proposal",
+  "call_script",
+  "youtube_script",
+  "sns_x",
+  "sns_facebook",
+  "sns_linkedin",
+];
+
+// 既存コンテンツからの派生生成を主とする種別
+const DERIVED_TYPES: ContentType[] = [
+  "youtube_script",
+  "sns_x",
+  "sns_facebook",
+  "sns_linkedin",
+];
 
 export default function ContentsPage() {
   const [contents, setContents] = useState<Content[]>([]);
@@ -23,6 +40,8 @@ export default function ContentsPage() {
   const [genType, setGenType] = useState<ContentType>("blog");
   const [genSegmentId, setGenSegmentId] = useState("");
   const [genCompanyId, setGenCompanyId] = useState("");
+  const [genParentId, setGenParentId] = useState("");
+  const [parentOptions, setParentOptions] = useState<Content[]>([]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
 
@@ -45,6 +64,17 @@ export default function ContentsPage() {
     fetch("/api/companies?exclude_dnc=true")
       .then((r) => r.json())
       .then((data) => Array.isArray(data) && setCompanies(data));
+    // 派生元の候補(Blog・ホワイトペーパー)
+    Promise.all([
+      fetch("/api/contents?type=blog").then((r) => r.json()),
+      fetch("/api/contents?type=whitepaper").then((r) => r.json()),
+    ]).then(([blogs, wps]) => {
+      const all = [
+        ...(Array.isArray(blogs) ? blogs : []),
+        ...(Array.isArray(wps) ? wps : []),
+      ];
+      setParentOptions(all);
+    });
   }, []);
 
   async function generate() {
@@ -53,8 +83,8 @@ export default function ContentsPage() {
       setError("提案書はターゲット企業の選択が必要です");
       return;
     }
-    if (genType !== "proposal" && !genSegmentId) {
-      setError("セグメントを選択してください");
+    if (genType !== "proposal" && !genSegmentId && !genParentId) {
+      setError("セグメントまたは派生元コンテンツを選択してください");
       return;
     }
     setGenerating(true);
@@ -65,6 +95,7 @@ export default function ContentsPage() {
         content_type: genType,
         segment_id: genSegmentId || undefined,
         company_id: genCompanyId || undefined,
+        parent_content_id: genParentId || undefined,
       }),
     });
     const data = await res.json();
@@ -123,6 +154,28 @@ export default function ContentsPage() {
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {genType !== "proposal" && (
+          <label className="space-y-1">
+            <span className="text-xs text-gray-500 block">
+              派生元コンテンツ
+              {DERIVED_TYPES.includes(genType)
+                ? "(推奨: Blogを元に生成)"
+                : "(任意: ホワイトペーパーを挿入)"}
+            </span>
+            <select
+              value={genParentId}
+              onChange={(e) => setGenParentId(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-1.5 bg-white max-w-72"
+            >
+              <option value="">なし</option>
+              {parentOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  [{CONTENT_TYPE_LABELS[p.content_type]}] {p.title}
                 </option>
               ))}
             </select>
