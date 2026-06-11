@@ -29,22 +29,27 @@ SEOコンテンツ生成、テレアポ管理などを行う。設計書は docs
 
 - src/app/companies/         企業一覧・詳細・取り込み(モジュール1)
 - src/app/segments/          ビジネスモデル×業界の管理
+- src/app/keywords/          キーワード生成・順位トラッキング設定(モジュール2)
+- src/app/contents/          コンテンツ生成・レビュー・WordPress公開(モジュール2,3)
+- src/app/calls/             架電リスト・架電画面(モジュール6)
+- src/app/login/ src/middleware.ts  認証(マジックリンク+ドメイン制限)
 - src/app/api/               Route Handlers(外部API呼び出しはすべてここに閉じる)
-- src/lib/supabase.ts        ブラウザ用Supabaseクライアント
+- src/app/api/cron/serp/     SERP順位の定期取得(Vercel Cron)
+- src/lib/supabase.ts        ブラウザ用Supabaseクライアント(@supabase/ssr)
 - src/lib/supabase-server.ts サーバー用(service role)クライアント
 - src/lib/gbizinfo.ts        gBizINFO APIクライアント
-- src/lib/claude.ts          スコアリング等のClaude API呼び出し
+- src/lib/serp.ts            SERP取得(SerpAPI実装、差し替え可能)
+- src/lib/wordpress.ts       WordPress REST API
+- src/lib/claude.ts          スコアリング・キーワード生成・コンテンツ生成
 - src/types/index.ts         型定義
 - supabase/migrations/       スキーママイグレーション
 
 ## 環境変数
 
-- ANTHROPIC_API_KEY
-- NEXT_PUBLIC_SUPABASE_URL
-- NEXT_PUBLIC_SUPABASE_ANON_KEY
-- SUPABASE_SERVICE_ROLE_KEY
-- GBIZINFO_API_TOKEN
-- EDINET_API_KEY(フェーズ1後半で使用)
+READMEのセットアップ手順を参照。必須: ANTHROPIC_API_KEY / NEXT_PUBLIC_SUPABASE_URL /
+NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY。
+機能別: GBIZINFO_API_TOKEN / SERPAPI_KEY / CRON_SECRET / WORDPRESS_URL /
+WORDPRESS_USER / WORDPRESS_APP_PASSWORD / ALLOWED_EMAIL_DOMAIN / EDINET_API_KEY(未使用)
 
 ## 実装ルール
 

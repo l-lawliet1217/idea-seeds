@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import UserMenu from "./user-menu";
 
 export const metadata: Metadata = {
   title: "AirERP Marketing Cloud",
@@ -11,6 +12,9 @@ const NAV_ITEMS = [
   { href: "/companies", label: "企業" },
   { href: "/companies/import", label: "取り込み" },
   { href: "/segments", label: "セグメント" },
+  { href: "/keywords", label: "キーワード" },
+  { href: "/contents", label: "コンテンツ" },
+  { href: "/calls", label: "テレアポ" },
 ];
 
 export default function RootLayout({
@@ -37,6 +41,7 @@ export default function RootLayout({
                 </Link>
               ))}
             </nav>
+            <UserMenu />
           </div>
         </header>
         <main className="max-w-6xl mx-auto px-4 py-8">{children}</main>
