@@ -51,7 +51,8 @@ npm run dev
 | 6. テレアポ(スクリプト生成 / リスト生成 / Zoom Phone click-to-call / 結果記録) | 実装済み |
 | 認証(Supabase Auth マジックリンク + ドメイン制限) | 実装済み |
 | セットアップ診断(/setup で設定状態を確認可能) | 実装済み |
-| EDINET役員取得 / 動画編集・YouTube連携 / SNS投稿連携 / 7. GiversNetwork移植 | 未着手 |
+| 7. GiversNetwork(Friends管理 / Tier / 接触記録・遅延検知) | コア実装済み |
+| EDINET役員取得 / 動画編集・YouTube連携 / SNS投稿連携 / Giversのマッチング・誕生日・トリガー | 未着手 |
 
 ## 初期データ(任意)
 

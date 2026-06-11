@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: "/keywords", label: "キーワード" },
   { href: "/contents", label: "コンテンツ" },
   { href: "/calls", label: "テレアポ" },
+  { href: "/givers", label: "Givers" },
 ];
 
 export default function RootLayout({
