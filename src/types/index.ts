@@ -235,3 +235,31 @@ export type CallListItem = {
   status: "pending" | "called" | "excluded";
   companies?: Company & { contacts: Contact[] };
 };
+
+export type FriendTier = "T1" | "T2" | "T3" | "T4" | "T5";
+
+export const FRIEND_TIERS: FriendTier[] = ["T1", "T2", "T3", "T4", "T5"];
+
+export type GiverFriend = {
+  id: string;
+  name: string;
+  company: string | null;
+  position: string | null;
+  industry: string | null;
+  tier: FriendTier;
+  next_contact_date: string | null;
+  last_contact_date: string | null;
+  birthday: string | null;
+  tags: string[] | null;
+  notes: string | null;
+  company_id: string | null;
+  created_at: string;
+};
+
+export type GiverContactLog = {
+  id: string;
+  friend_id: string;
+  contacted_at: string;
+  channel: string | null;
+  memo: string | null;
+};
