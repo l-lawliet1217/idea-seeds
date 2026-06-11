@@ -53,6 +53,11 @@ npm run dev
 | セットアップ診断(/setup で設定状態を確認可能) | 実装済み |
 | EDINET役員取得 / 動画編集・YouTube連携 / SNS投稿連携 / 7. GiversNetwork移植 | 未着手 |
 
+## 初期データ(任意)
+
+マイグレーション後に `supabase/seed.sql` を実行すると、ビジネスモデル・業界のサンプルが入り、
+セグメント作成をすぐ始められる(内容は編集可)。
+
 ## 運用メモ
 
 - コンテンツは draft → in_review → approved を経ないとWordPress公開できない(人間レビュー必須)
