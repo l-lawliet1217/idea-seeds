@@ -185,3 +185,101 @@ ${CONTENT_INSTRUCTIONS[input.contentType]}
   }
   return { title: String(parsed.title), body: String(parsed.body) };
 }
+
+// ---------- GiversNetwork: マッチング判定・メッセージ生成 ----------
+
+export type MatchJudgement = {
+  index: number;
+  adopt: boolean;
+  reason: string;
+};
+
+// 候補ペアをバッチで判定する。過去の採用/却下をfew-shotとして注入
+export async function judgeMatchCandidates(
+  pairs: { index: number; seeker: string; candidate: string }[],
+  feedbackExamples: string[]
+): Promise<MatchJudgement[]> {
+  const feedbackBlock =
+    feedbackExamples.length > 0
+      ? `過去の判断例(これに整合させること):\n${feedbackExamples.join("\n")}\n\n`
+      : "";
+
+  const pairsBlock = pairs
+    .map((p) => `[${p.index}]\n会いたい側: ${p.seeker}\n候補: ${p.candidate}`)
+    .join("\n\n");
+
+  const res = await getClient().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 3000,
+    messages: [
+      {
+        role: "user",
+        content: `あなたは経営者ネットワークの紹介マッチング判定者です。
+「会いたい側」の希望と「候補」のプロフィールを照合し、紹介する価値が高いペアだけを採用してください。
+判定基準は厳格に:
+- 希望と候補の事業・立場が具体的に噛み合っていること
+- VC×スタートアップの場合は投資ステージと調達フェーズが整合していること
+- 業界が同じだけ・抽象的な相性だけでの採用は不可
+
+${feedbackBlock}候補ペア:
+${pairsBlock}
+
+次のJSON配列のみを出力(コードブロック不要):
+[{"index": 番号, "adopt": true/false, "reason": "日本語1文"}]`,
+      },
+    ],
+  });
+
+  const text = res.content[0].type === "text" ? res.content[0].text : "";
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) throw new Error("マッチング判定のJSONを抽出できませんでした");
+  const parsed: unknown = JSON.parse(match[0]);
+  if (!Array.isArray(parsed)) throw new Error("マッチング判定の形式が不正です");
+  return parsed.map((row) => ({
+    index: Number((row as MatchJudgement).index),
+    adopt: !!(row as MatchJudgement).adopt,
+    reason: String((row as MatchJudgement).reason ?? ""),
+  }));
+}
+
+export type GiversMessageKind = "pitch" | "connection" | "birthday" | "follow";
+
+const GIVERS_MESSAGE_INSTRUCTIONS: Record<GiversMessageKind, string> = {
+  pitch:
+    "紹介打診のメッセージ。相手(会いたい側の友人)に「こういう方がいるが、お繋ぎしてよいか」を打診する。候補者の魅力と繋がる価値を具体的に。",
+  connection:
+    "両者へ送る接続(引き合わせ)メッセージ。双方の簡単な紹介と、繋いだ理由、次のアクション(日程調整など)を含める。",
+  birthday:
+    "誕生日のお祝いメッセージ。短く心のこもった内容で、近況を伺う一言を添える。",
+  follow:
+    "しばらく接触していない相手へのフォローアップ。重くならず、近況伺いと軽い再会提案を。",
+};
+
+export async function generateGiversMessage(input: {
+  kind: GiversMessageKind;
+  friendProfile: string; // 送り先の情報
+  otherProfile?: string; // 紹介相手の情報(pitch/connection時)
+  context?: string;
+}): Promise<string> {
+  const res = await getClient().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1500,
+    messages: [
+      {
+        role: "user",
+        content: `あなたは経営者ネットワーカーの代筆者です。SNSのDMで送る自然な日本語メッセージを書いてください。
+種別: ${GIVERS_MESSAGE_INSTRUCTIONS[input.kind]}
+
+送り先: ${input.friendProfile}
+${input.otherProfile ? `紹介相手: ${input.otherProfile}` : ""}
+${input.context ? `補足: ${input.context}` : ""}
+
+- 敬意がありつつカジュアルすぎないトーン
+- 300字以内
+- メッセージ本文のみを出力(前置き・引用符不要)`,
+      },
+    ],
+  });
+  const text = res.content[0].type === "text" ? res.content[0].text : "";
+  return text.trim();
+}

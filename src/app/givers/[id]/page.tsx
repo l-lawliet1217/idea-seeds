@@ -123,7 +123,42 @@ export default function FriendDetailPage() {
             value={friend.next_contact_date ?? ""}
             onSave={(v) => patch({ next_contact_date: v })}
           />
-          <NotesField value={friend.notes ?? ""} onSave={(v) => patch({ notes: v })} />
+          <Field
+            label="サイクル(月)"
+            type="number"
+            value={String(friend.contact_cycle_months ?? 3)}
+            onSave={(v) => patch({ contact_cycle_months: Number(v) || 3 })}
+          />
+          <Field
+            label="フェーズ"
+            value={friend.phase ?? ""}
+            onSave={(v) => patch({ phase: v })}
+          />
+          <Field
+            label="性格"
+            value={friend.personality ?? ""}
+            onSave={(v) => patch({ personality: v })}
+          />
+          <TextAreaField
+            label="会いたい人(マッチングの起点になります)"
+            value={friend.wants_to_meet ?? ""}
+            onSave={(v) => patch({ wants_to_meet: v })}
+          />
+          <TextAreaField
+            label="ニーズ"
+            value={friend.needs ?? ""}
+            onSave={(v) => patch({ needs: v })}
+          />
+          <TextAreaField
+            label="貢献できること"
+            value={friend.contributions ?? ""}
+            onSave={(v) => patch({ contributions: v })}
+          />
+          <TextAreaField
+            label="メモ"
+            value={friend.notes ?? ""}
+            onSave={(v) => patch({ notes: v })}
+          />
         </div>
 
         <div className="space-y-5">
@@ -225,17 +260,25 @@ function Field({
   );
 }
 
-function NotesField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+function TextAreaField({
+  label,
+  value,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  onSave: (v: string) => void;
+}) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
   return (
     <div className="space-y-1">
-      <span className="text-gray-400 text-xs">メモ</span>
+      <span className="text-gray-400 text-xs">{label}</span>
       <textarea
         value={v}
         onChange={(e) => setV(e.target.value)}
         onBlur={() => v !== value && onSave(v)}
-        rows={4}
+        rows={3}
         className="w-full border border-gray-200 rounded-lg px-3 py-2"
       />
     </div>
