@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { marked } from "marked";
 import {
   Content,
   CONTENT_STATUS_LABELS,
@@ -16,6 +17,7 @@ export default function ContentDetailPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/contents/${id}`);
@@ -89,6 +91,12 @@ export default function ContentDetailPage() {
             公開ページを開く
           </a>
         )}
+        <button
+          onClick={() => setPreview(!preview)}
+          className="ml-auto text-xs text-gray-500 border border-gray-300 rounded-lg px-2 py-1 hover:text-gray-900"
+        >
+          {preview ? "編集に戻る" : "プレビュー"}
+        </button>
       </div>
 
       <input
@@ -96,12 +104,19 @@ export default function ContentDetailPage() {
         onChange={(e) => setTitle(e.target.value)}
         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-lg font-semibold bg-white"
       />
-      <textarea
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        rows={24}
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono bg-white leading-relaxed"
-      />
+      {preview ? (
+        <div
+          className="markdown-body bg-white border border-gray-200 rounded-lg px-6 py-5 text-sm"
+          dangerouslySetInnerHTML={{ __html: marked.parse(body) as string }}
+        />
+      ) : (
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={24}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono bg-white leading-relaxed"
+        />
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       {message && <p className="text-sm text-green-700">{message}</p>}

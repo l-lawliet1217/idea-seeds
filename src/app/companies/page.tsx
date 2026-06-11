@@ -17,6 +17,8 @@ export default function CompaniesPage() {
   const [excludeDnc, setExcludeDnc] = useState(true);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
+  const [scoring, setScoring] = useState(false);
+  const [scoreMessage, setScoreMessage] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -44,12 +46,43 @@ export default function CompaniesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">企業一覧</h1>
-        <Link
-          href="/companies/import"
-          className="px-3 py-1.5 bg-gray-900 text-white rounded-lg text-sm"
-        >
-          gBizINFOから取り込み
-        </Link>
+        <div className="flex items-center gap-2">
+          {scoreMessage && (
+            <span className="text-xs text-gray-500">{scoreMessage}</span>
+          )}
+          <button
+            onClick={async () => {
+              setScoring(true);
+              setScoreMessage("");
+              const res = await fetch("/api/companies/score-batch", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  limit: 10,
+                  segment_id: segmentId || undefined,
+                }),
+              });
+              const data = await res.json();
+              setScoring(false);
+              setScoreMessage(
+                res.ok
+                  ? `${data.scored}件採点(残り${data.remaining}件)`
+                  : (data.error ?? "採点に失敗しました")
+              );
+              load();
+            }}
+            disabled={scoring}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-40"
+          >
+            {scoring ? "採点中..." : "未採点を一括採点(10件)"}
+          </button>
+          <Link
+            href="/companies/import"
+            className="px-3 py-1.5 bg-gray-900 text-white rounded-lg text-sm"
+          >
+            gBizINFOから取り込み
+          </Link>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 items-center bg-white border border-gray-200 rounded-xl p-3 text-sm">

@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 };
 
 const NAV_ITEMS = [
+  { href: "/", label: "ダッシュボード" },
   { href: "/companies", label: "企業" },
   { href: "/companies/import", label: "取り込み" },
   { href: "/segments", label: "セグメント" },
@@ -27,7 +28,7 @@ export default function RootLayout({
       <body className="bg-gray-50 text-gray-900 antialiased">
         <header className="bg-white border-b border-gray-200">
           <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-8">
-            <Link href="/companies" className="font-semibold tracking-tight">
+            <Link href="/" className="font-semibold tracking-tight">
               AirERP Marketing Cloud
             </Link>
             <nav className="flex gap-5 text-sm text-gray-500">

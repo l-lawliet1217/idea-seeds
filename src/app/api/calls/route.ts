@@ -37,6 +37,15 @@ export async function POST(req: Request) {
       .eq("id", body.call_list_item_id);
   }
 
+  // アポ獲得時はファネル前段の企業を自動で商談中に進める
+  if (body.result === "appointment") {
+    await supabase
+      .from("companies")
+      .update({ status: "negotiating", updated_at: new Date().toISOString() })
+      .eq("id", body.company_id)
+      .in("status", ["candidate", "qualified", "approaching"]);
+  }
+
   await supabase.from("activities").insert({
     company_id: body.company_id,
     activity_type: "call",
