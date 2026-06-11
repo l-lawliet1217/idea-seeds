@@ -1,52 +1,237 @@
-export type PestAnalysis = {
-  political: string;
-  economic: string;
-  social: string;
-  technological: string;
+export type CompanyStatus =
+  | "candidate"
+  | "qualified"
+  | "approaching"
+  | "negotiating"
+  | "client"
+  | "lost"
+  | "excluded";
+
+export const COMPANY_STATUS_LABELS: Record<CompanyStatus, string> = {
+  candidate: "候補",
+  qualified: "調査済",
+  approaching: "アプローチ中",
+  negotiating: "商談中",
+  client: "受注",
+  lost: "失注",
+  excluded: "対象外",
 };
 
-export type JobsAnalysis = {
-  functional: string[];
-  emotional: string[];
-  social: string[];
+export type ContactRole = "executive" | "marketing" | "other";
+
+export const CONTACT_ROLE_LABELS: Record<ContactRole, string> = {
+  executive: "役員",
+  marketing: "マーケ担当",
+  other: "その他",
 };
 
-export type FrameworksAnalysis = {
-  five_forces: string;
-  three_c: string;
-  four_p: string;
+export type RelationType = "vendor" | "investor";
+
+export const RELATION_TYPE_LABELS: Record<RelationType, string> = {
+  vendor: "支援ベンダー",
+  investor: "投資家",
 };
 
-export type ServiceIdea = {
+export type BusinessModel = {
+  id: string;
   name: string;
-  description: string;
-  target: string;
+  description: string | null;
 };
 
-export type Seed = {
+export type Industry = {
   id: string;
-  raw_input: string;
-  pest: PestAnalysis | null;
-  jobs: JobsAnalysis | null;
-  frameworks: FrameworksAnalysis | null;
-  service_ideas: ServiceIdea[] | null;
-  tags: string[] | null;
+  name: string;
+  gbizinfo_code: string | null;
+  jsic_code: string | null;
+  source_note: string | null;
+};
+
+export type Segment = {
+  id: string;
+  business_model_id: string;
+  industry_id: string;
+  name: string;
+  priority: number;
+  is_active: boolean;
+  business_models?: BusinessModel;
+  industries?: Industry;
+};
+
+export type Company = {
+  id: string;
+  segment_id: string | null;
+  corporate_number: string | null;
+  name: string;
+  website_url: string | null;
+  prefecture: string | null;
+  revenue_jpy: number | null;
+  employees: number | null;
+  budget_score: number | null;
+  budget_score_reason: string | null;
+  status: CompanyStatus;
+  do_not_contact: boolean;
+  source: string | null;
+  source_url: string | null;
+  collected_at: string | null;
+  note: string | null;
+  created_at: string;
+  segments?: Segment;
+};
+
+export type Contact = {
+  id: string;
+  company_id: string;
+  name: string;
+  role: ContactRole;
+  title: string | null;
+  email: string | null;
+  phone: string | null;
+  source_url: string;
+  do_not_contact: boolean;
+  note: string | null;
   created_at: string;
 };
 
-export type Combination = {
+export type CompanyRelation = {
   id: string;
-  seed_ids: string[];
-  idea: string;
+  company_id: string;
+  related_name: string;
+  relation_type: RelationType;
+  phone: string | null;
+  source_url: string | null;
+  note: string | null;
+};
+
+export type Activity = {
+  id: number;
+  company_id: string;
+  activity_type: string;
+  summary: string | null;
+  occurred_at: string;
+};
+
+export type CompanyDetail = Company & {
+  contacts: Contact[];
+  company_relations: CompanyRelation[];
+  activities: Activity[];
+};
+
+export type ImportCandidate = {
+  corporate_number: string;
+  name: string;
+  prefecture: string | null;
+  employees: number | null;
+  website_url: string | null;
+};
+
+export type Keyword = {
+  id: string;
+  segment_id: string;
+  keyword: string;
+  search_volume: number | null;
+  intent: string | null;
+  is_tracked: boolean;
   created_at: string;
 };
 
-export type AnalysisResult = {
-  seed: Seed;
-  combinations: CombinationSuggestion[];
+export type TrackingSettings = {
+  id?: string;
+  segment_id: string;
+  fetch_frequency_hours: number;
+  fetch_depth: number;
+  device: string;
+  min_sample_days: number;
 };
 
-export type CombinationSuggestion = {
-  related_seed_input: string;
-  idea: string;
+export type ContentType =
+  | "blog"
+  | "whitepaper"
+  | "proposal"
+  | "youtube_script"
+  | "sns_x"
+  | "sns_facebook"
+  | "sns_linkedin"
+  | "call_script";
+
+export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
+  blog: "Blog記事",
+  whitepaper: "ホワイトペーパー",
+  proposal: "提案書",
+  youtube_script: "YouTube台本",
+  sns_x: "X投稿",
+  sns_facebook: "Facebook投稿",
+  sns_linkedin: "LinkedIn投稿",
+  call_script: "架電スクリプト",
+};
+
+export type ContentStatus =
+  | "draft"
+  | "in_review"
+  | "approved"
+  | "scheduled"
+  | "published"
+  | "archived";
+
+export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
+  draft: "下書き",
+  in_review: "レビュー中",
+  approved: "承認済み",
+  scheduled: "公開予約",
+  published: "公開済み",
+  archived: "アーカイブ",
+};
+
+export type Content = {
+  id: string;
+  content_type: ContentType;
+  segment_id: string | null;
+  company_id: string | null;
+  parent_content_id: string | null;
+  title: string;
+  body: string | null;
+  keywords_used: string[] | null;
+  status: ContentStatus;
+  review_note: string | null;
+  wordpress_post_id: number | null;
+  published_url: string | null;
+  published_at: string | null;
+  created_at: string;
+  segments?: { id: string; name: string } | null;
+  companies?: { id: string; name: string } | null;
+};
+
+export type CallResult =
+  | "connected"
+  | "no_answer"
+  | "refused"
+  | "appointment"
+  | "callback";
+
+export const CALL_RESULT_LABELS: Record<CallResult, string> = {
+  connected: "通話",
+  no_answer: "不在",
+  refused: "拒否",
+  appointment: "アポ獲得",
+  callback: "再架電",
+};
+
+export type CallList = {
+  id: string;
+  name: string;
+  segment_id: string | null;
+  script_content_id: string | null;
+  filter_criteria: Record<string, unknown> | null;
+  created_at: string;
+  segments?: { id: string; name: string } | null;
+  call_list_items?: { count: number }[];
+};
+
+export type CallListItem = {
+  id: string;
+  call_list_id: string;
+  company_id: string;
+  contact_id: string | null;
+  priority: number;
+  status: "pending" | "called" | "excluded";
+  companies?: Company & { contacts: Contact[] };
 };

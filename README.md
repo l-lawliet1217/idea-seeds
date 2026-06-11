@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AirERP Marketing Cloud
 
-## Getting Started
+SEO事業の営業・マーケティングを一気通貫で管理するシステム。
+設計書は [docs/airerp-marketing-cloud/](docs/airerp-marketing-cloud/) を参照。
 
-First, run the development server:
+## セットアップ
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+1. Supabaseプロジェクトで `supabase/migrations/` のSQLを番号順に実行
+2. `.env.local` に環境変数を設定
+
+```
+# 必須
+ANTHROPIC_API_KEY=
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# 企業取り込み(モジュール1)
+GBIZINFO_API_TOKEN=
+
+# SERP順位取得(モジュール2)
+SERPAPI_KEY=
+CRON_SECRET=
+
+# WordPress公開(モジュール2,3)
+WORDPRESS_URL=
+WORDPRESS_USER=
+WORDPRESS_APP_PASSWORD=
+
+# 認証
+ALLOWED_EMAIL_DOMAIN=mar-che.com
+# ローカル開発でSupabase Auth未設定の場合のみ
+# AUTH_DISABLED=true
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3. 起動
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 実装状況
 
-## Learn More
+| モジュール | 状態 |
+|---|---|
+| 1. 企業管理(セグメント / gBizINFO取り込み / スコアリング / 担当者・関連会社) | 実装済み |
+| 2. SEO(キーワード生成 / 順位トラッキング / Blog・WP生成 / WordPress公開) | 実装済み |
+| 3. 企業別提案書(SERPデータを引用した提案書生成) | 実装済み(Ahrefs連携は未) |
+| 6. テレアポ(スクリプト生成 / リスト生成 / Zoom Phone click-to-call / 結果記録) | 実装済み |
+| 認証(Supabase Auth マジックリンク + ドメイン制限) | 実装済み |
+| EDINET役員取得 / 4. YouTube / 5. SNS / 7. GiversNetwork移植 | 未着手 |
 
-To learn more about Next.js, take a look at the following resources:
+## 運用メモ
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- コンテンツは draft → in_review → approved を経ないとWordPress公開できない(人間レビュー必須)
+- 架電で「拒否」を記録すると企業・担当者の do_not_contact が自動でONになり、以後のリスト生成から除外される
+- SERP順位はVercel Cron(毎日 18:00 UTC = 翌3:00 JST)で自動取得。SERP APIはSerpAPI実装(src/lib/serp.ts で差し替え可能)
