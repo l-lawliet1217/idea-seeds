@@ -345,7 +345,7 @@ export default function CompaniesPage() {
                       href={`/companies/${c.id}`}
                       className="text-gray-900 hover:underline underline-offset-2"
                     >
-                      {c.name}
+                      {c.name || <span className="text-gray-400">(社名未取得)</span>}
                     </Link>
                     {c.do_not_contact && (
                       <span className="ml-2 text-xs text-red-500">連絡拒否</span>
