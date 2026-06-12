@@ -13,6 +13,7 @@ import {
   findCompanyInfoLinks,
 } from "@/lib/serp";
 import { extractUsage, logApiUsage } from "@/lib/usage";
+import { normalizeCompanyName } from "@/lib/gbizinfo";
 
 async function fetchHtml(url: string): Promise<string | null> {
   try {
@@ -76,10 +77,10 @@ export async function POST(req: Request) {
       });
     }
 
-    // 既存企業とドメイン重複するものは候補から外す
+    // 既存企業とドメイン重複するものは候補から外す(社名重複は登録時に判定)
     const { data: existing } = await supabase
       .from("companies")
-      .select("service_url, website_url");
+      .select("name, service_url, website_url");
     const existingDomains = new Set(
       (existing ?? [])
         .flatMap((row) => [row.service_url, row.website_url])
@@ -147,18 +148,38 @@ export async function POST(req: Request) {
     }
 
     // 特定できなかった場合は空欄で登録(後からgBizINFOや手動で補完)
+    // 同一運営会社の重複登録を防ぐ: 既存企業・同一バッチ内で正規化社名が一致したらスキップ
+    // (例: コーポレートサイトとサービスサイトでドメインが違っても同じ会社)
+    const existingNames = new Set(
+      (existing ?? [])
+        .map((row) => (row.name ? normalizeCompanyName(row.name) : null))
+        .filter((n): n is string => !!n)
+    );
     const now = new Date().toISOString();
-    const rows = siteData.map((site) => ({
-      segment_id: segment.id,
-      name: names[site.index] ?? "",
-      service_name: site.service_name,
-      service_url: site.url,
-      website_url: site.url,
-      status: "candidate",
-      source: "serp_research",
-      source_url: site.url,
-      collected_at: now,
-    }));
+    const rows: Record<string, unknown>[] = [];
+    let duplicates = 0;
+    for (const site of siteData) {
+      const companyName = names[site.index] ?? "";
+      if (companyName) {
+        const normalized = normalizeCompanyName(companyName);
+        if (existingNames.has(normalized)) {
+          duplicates++;
+          continue;
+        }
+        existingNames.add(normalized);
+      }
+      rows.push({
+        segment_id: segment.id,
+        name: companyName,
+        service_name: site.service_name,
+        service_url: site.url,
+        website_url: site.url,
+        status: "candidate",
+        source: "serp_research",
+        source_url: site.url,
+        collected_at: now,
+      });
+    }
 
     // 調査が完了したセグメントは収集済みフラグを立てる
     await supabase
@@ -182,6 +203,7 @@ export async function POST(req: Request) {
       segment: segment.name,
       found: candidates.length,
       inserted,
+      duplicates,
       skipped: candidates.length - inserted,
       cost_usd: costUsd,
     });
