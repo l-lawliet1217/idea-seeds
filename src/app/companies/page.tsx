@@ -4,11 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import CompaniesNav from "./companies-nav";
 import {
-  BusinessModel,
   Company,
   CompanyStatus,
   COMPANY_STATUS_LABELS,
-  IndustryDatabase,
   Segment,
 } from "@/types";
 
@@ -21,8 +19,6 @@ function formatNumber(v: number | null): string {
 
 export default function CompaniesPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [businessModels, setBusinessModels] = useState<BusinessModel[]>([]);
-  const [databases, setDatabases] = useState<IndustryDatabase[]>([]);
   const [segments, setSegments] = useState<Segment[]>([]);
 
   const [businessModelId, setBusinessModelId] = useState("");
@@ -34,6 +30,16 @@ export default function CompaniesPage() {
   const [researching, setResearching] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
+  const [monthUsd, setMonthUsd] = useState<number | null>(null);
+
+  const loadUsage = useCallback(async () => {
+    const data = await fetch("/api/usage").then((r) => r.json()).catch(() => null);
+    if (data && typeof data.month_usd === "number") setMonthUsd(data.month_usd);
+  }, []);
+
+  useEffect(() => {
+    loadUsage();
+  }, [loadUsage]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,16 +59,47 @@ export default function CompaniesPage() {
   }, [load]);
 
   useEffect(() => {
-    fetch("/api/business-models")
-      .then((r) => r.json())
-      .then((data) => Array.isArray(data) && setBusinessModels(data));
-    fetch("/api/industry-databases")
-      .then((r) => r.json())
-      .then((data) => Array.isArray(data) && setDatabases(data));
     fetch("/api/segments")
       .then((r) => r.json())
       .then((data) => Array.isArray(data) && setSegments(data));
   }, []);
+
+  // セグメントから既存の「特化先DB×ビジネスモデル」の組み合わせを導出
+  const combos = (() => {
+    const map = new Map<
+      string,
+      { dbId: string; bmId: string; label: string; count: number }
+    >();
+    for (const seg of segments) {
+      const dbId = seg.industries?.database_id;
+      const bmId = seg.business_model_id;
+      if (!dbId || !bmId) continue;
+      const key = `${dbId}:${bmId}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.count++;
+      } else {
+        const dbName = seg.industries?.industry_databases?.name ?? "?";
+        const bmName = seg.business_models?.name ?? "?";
+        map.set(key, { dbId, bmId, label: `${dbName} × ${bmName}`, count: 1 });
+      }
+    }
+    return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, "ja"));
+  })();
+
+  const selectedComboKey =
+    databaseId && businessModelId ? `${databaseId}:${businessModelId}` : "";
+
+  function selectCombo(key: string) {
+    if (!key) {
+      setDatabaseId("");
+      setBusinessModelId("");
+      return;
+    }
+    const [dbId, bmId] = key.split(":");
+    setDatabaseId(dbId);
+    setBusinessModelId(bmId);
+  }
 
   // 選択中のビジネスモデル×特化先DBに該当するセグメント
   const targetSegments = segments.filter(
@@ -73,7 +110,7 @@ export default function CompaniesPage() {
 
   async function research() {
     if (!businessModelId || !databaseId) {
-      setError("ビジネスモデルと特化先DBを選択してください");
+      setError("特化先DB × ビジネスモデルを選択してください");
       return;
     }
     // 企業が未登録のセグメントから順に、1回の実行で最大5セグメント調査
@@ -89,9 +126,12 @@ export default function CompaniesPage() {
     setResearching(true);
     setError("");
     let total = 0;
+    let runCost = 0;
     for (let i = 0; i < queue.length; i++) {
       const seg = queue[i];
-      setProgress(`(${i + 1}/${queue.length}) ${seg.name} を調査中...`);
+      setProgress(
+        `(${i + 1}/${queue.length}) ${seg.name} を調査中... 累計コスト $${runCost.toFixed(3)}`
+      );
       try {
         const res = await fetch("/api/companies/research", {
           method: "POST",
@@ -99,16 +139,21 @@ export default function CompaniesPage() {
           body: JSON.stringify({ segment_id: seg.id }),
         });
         const data = await res.json();
-        if (res.ok) total += data.inserted ?? 0;
-        else setError(data.error ?? "一部のセグメントで失敗しました");
+        if (res.ok) {
+          total += data.inserted ?? 0;
+          runCost += data.cost_usd ?? 0;
+        } else setError(data.error ?? "一部のセグメントで失敗しました");
       } catch {
         setError("通信エラーが発生しました");
       }
       load();
     }
-    setProgress(`完了: ${queue.length}セグメントを調査し、${total}社を登録しました`);
+    setProgress(
+      `完了: ${queue.length}セグメントを調査し、${total}社を登録しました(今回のコスト: $${runCost.toFixed(3)})`
+    );
     setResearching(false);
     load();
+    loadUsage();
   }
 
   return (
@@ -118,32 +163,26 @@ export default function CompaniesPage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <h2 className="text-sm font-semibold">
-          AI企業リサーチ(ビジネスモデル×特化先のサイトをWeb検索で発掘)
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">
+            AI企業リサーチ(ビジネスモデル×特化先のサイトをWeb検索で発掘)
+          </h2>
+          {monthUsd !== null && (
+            <span className="text-xs text-gray-400">
+              今月のAI利用額: ${monthUsd.toFixed(2)}
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2 items-center text-sm">
           <select
-            value={databaseId}
-            onChange={(e) => setDatabaseId(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
+            value={selectedComboKey}
+            onChange={(e) => selectCombo(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-1.5 bg-white max-w-96"
           >
-            <option value="">特化先DBを選択</option>
-            {databases.map((db) => (
-              <option key={db.id} value={db.id}>
-                {db.name}
-              </option>
-            ))}
-          </select>
-          <span className="text-gray-400">×</span>
-          <select
-            value={businessModelId}
-            onChange={(e) => setBusinessModelId(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
-          >
-            <option value="">ビジネスモデルを選択</option>
-            {businessModels.map((bm) => (
-              <option key={bm.id} value={bm.id}>
-                {bm.name}
+            <option value="">特化先DB × ビジネスモデルを選択</option>
+            {combos.map((combo) => (
+              <option key={`${combo.dbId}:${combo.bmId}`} value={`${combo.dbId}:${combo.bmId}`}>
+                {combo.label}({combo.count}セグメント)
               </option>
             ))}
           </select>

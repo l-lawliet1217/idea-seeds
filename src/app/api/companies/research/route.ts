@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { researchCompanies } from "@/lib/claude";
 import { extractDomain } from "@/lib/serp";
+import { extractUsage, logApiUsage } from "@/lib/usage";
 
 export const maxDuration = 300;
 
@@ -23,9 +24,21 @@ export async function POST(req: Request) {
   }
 
   try {
-    const results = await researchCompanies(segment.name);
+    const outcome = await researchCompanies(segment.name);
+    const usage = extractUsage(outcome.usage);
+    const costUsd = await logApiUsage("research", "claude-sonnet-4-6", usage, {
+      segment_id: segment.id,
+      segment: segment.name,
+    });
+    const results = outcome.companies;
     if (results.length === 0) {
-      return NextResponse.json({ segment: segment.name, inserted: 0, found: 0 });
+      return NextResponse.json({
+        segment: segment.name,
+        inserted: 0,
+        found: 0,
+        cost_usd: costUsd,
+        web_searches: usage.web_searches,
+      });
     }
 
     // 既存企業との重複をドメインで除外
@@ -76,6 +89,8 @@ export async function POST(req: Request) {
       found: results.length,
       inserted,
       skipped: results.length - inserted,
+      cost_usd: costUsd,
+      web_searches: usage.web_searches,
     });
   } catch (err) {
     return NextResponse.json(
