@@ -41,7 +41,14 @@ function decodeHtml(buf: ArrayBuffer, contentType: string | null): string {
 async function fetchHtml(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; AirERP/1.0)" },
+      // ボット風UAはWAFに弾かれるため、ブラウザ同等のヘッダーで取得する
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ja,en-US;q=0.8",
+      },
       signal: AbortSignal.timeout(10000),
       cache: "no-store",
     });

@@ -101,28 +101,40 @@ export function collectCompanyEvidence(
   return [...out].slice(0, 10);
 }
 
-// 会社概要・運営会社・特定商取引法ページへのリンクを探す(最大3件)
-// 画像リンク(alt属性)やtitle属性のラベルも対象にする
+// 会社概要・運営会社・特定商取引法ページへのリンクを探す(スコア順に最大3件)
+// ラベル一致(日英)を最優先し、hrefの手がかりは補助。無関係なページは減点して除外する
 export function findCompanyInfoLinks(html: string, baseUrl: string): string[] {
-  const links: string[] = [];
-  const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]{0,300}?)<\/a>/gi;
-  const labelPattern =
-    /会社概要|会社案内|運営会社|会社情報|企業情報|運営者|運営元|特定商取引|コーポレート/;
-  const hrefPattern =
+  const strongLabel =
+    /会社概要|会社案内|運営会社|会社情報|企業情報|運営者|運営元|特定商取引|コーポレート|about\s*us|company\s*(?:profile|info|outline)?|corporate/i;
+  const hrefHint =
     /company|corporate|about|profile|tokutei|kaisya|kaisha|outline|operator|unei|gaiyou?/i;
+  const hrefNoise =
+    /news|blog|column|faq|help|recruit|privacy|terms|policy|contact|login|entry|career|sitemap/i;
+
+  const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]{0,400}?)<\/a>/gi;
+  const best = new Map<string, number>();
   let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null && links.length < 8) {
+  let scanned = 0;
+  while ((m = re.exec(html)) !== null && scanned < 300) {
+    scanned++;
     const href = m[1];
-    // 内側HTMLそのまま判定する(altやtitle属性のラベルも拾うため)
-    if (labelPattern.test(m[2]) || hrefPattern.test(href)) {
-      try {
-        links.push(new URL(href, baseUrl).toString());
-      } catch {
-        // 不正なURLはスキップ
-      }
+    const inner = m[2]; // alt/title属性のラベルも拾うため内側HTMLをそのまま判定
+    let score = 0;
+    if (strongLabel.test(inner)) score += 10;
+    if (hrefHint.test(href)) score += 3;
+    if (hrefNoise.test(href)) score -= 6;
+    if (score <= 0) continue;
+    try {
+      const url = new URL(href, baseUrl).toString();
+      best.set(url, Math.max(best.get(url) ?? -Infinity, score));
+    } catch {
+      // 不正なURLはスキップ
     }
   }
-  return [...new Set(links)].slice(0, 3);
+  return [...best.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([url]) => url);
 }
 
 // <title> からサービス名を取り出す(区切り文字以降のキャッチコピーは落とす)
