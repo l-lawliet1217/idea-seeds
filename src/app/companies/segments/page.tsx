@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import CompaniesNav from "../companies-nav";
-import { BusinessModel, Industry, IndustryDatabase, Segment } from "@/types";
+import { BusinessModel, IndustryDatabase, Segment } from "@/types";
 
 export default function SegmentsPage() {
   const [businessModels, setBusinessModels] = useState<BusinessModel[]>([]);
   const [databases, setDatabases] = useState<IndustryDatabase[]>([]);
-  const [industries, setIndustries] = useState<Industry[]>([]);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -17,20 +16,14 @@ export default function SegmentsPage() {
   const [bulkDbId, setBulkDbId] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  // 個別作成
-  const [bmId, setBmId] = useState("");
-  const [indId, setIndId] = useState("");
-
   const load = useCallback(async () => {
-    const [bm, db, ind, seg] = await Promise.all([
+    const [bm, db, seg] = await Promise.all([
       fetch("/api/business-models").then((r) => r.json()),
       fetch("/api/industry-databases").then((r) => r.json()),
-      fetch("/api/industries").then((r) => r.json()),
       fetch("/api/segments").then((r) => r.json()),
     ]);
     if (Array.isArray(bm)) setBusinessModels(bm);
     if (Array.isArray(db)) setDatabases(db);
-    if (Array.isArray(ind)) setIndustries(ind);
     if (Array.isArray(seg)) setSegments(seg);
   }, []);
 
@@ -60,26 +53,6 @@ export default function SegmentsPage() {
     setMessage(
       `${data.inserted}件のセグメントを作成しました(既存スキップ: ${data.skipped}件)`
     );
-    load();
-  }
-
-  async function createSingle(e: React.FormEvent) {
-    e.preventDefault();
-    if (!bmId || !indId) return;
-    setError("");
-    setMessage("");
-    const res = await fetch("/api/segments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ business_model_id: bmId, industry_id: indId }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? "作成に失敗しました");
-      return;
-    }
-    setBmId("");
-    setIndId("");
     load();
   }
 
@@ -148,40 +121,6 @@ export default function SegmentsPage() {
               : `一括作成${bulkDbCount ? `(最大${bulkDbCount}件)` : ""}`}
           </button>
         </div>
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-sm font-semibold mb-3">個別作成</h2>
-        <form onSubmit={createSingle} className="flex gap-2 items-center text-sm">
-          <select
-            value={indId}
-            onChange={(e) => setIndId(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 bg-white max-w-64"
-          >
-            <option value="">特化先を選択</option>
-            {industries.map((ind) => (
-              <option key={ind.id} value={ind.id}>
-                {ind.name}
-              </option>
-            ))}
-          </select>
-          <span className="text-gray-400">×</span>
-          <select
-            value={bmId}
-            onChange={(e) => setBmId(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
-          >
-            <option value="">ビジネスモデルを選択</option>
-            {businessModels.map((bm) => (
-              <option key={bm.id} value={bm.id}>
-                {bm.name}
-              </option>
-            ))}
-          </select>
-          <button className="px-4 py-1.5 border border-gray-300 rounded-lg">
-            作成
-          </button>
-        </form>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
