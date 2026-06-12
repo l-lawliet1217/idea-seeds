@@ -118,8 +118,8 @@ export default function CompaniesPage() {
       setError("特化先DB × ビジネスモデルを選択してください");
       return;
     }
-    // 企業収集フラグが立っていないセグメントから順に、1回の実行で最大5セグメント調査
-    const queue = targetSegments.filter((seg) => !seg.research_done).slice(0, 5);
+    // 企業収集フラグが立っていないセグメントから順に、1回の実行で最大10セグメント調査
+    const queue = targetSegments.filter((seg) => !seg.research_done).slice(0, 10);
     if (queue.length === 0) {
       setError(
         "未収集のセグメントがありません(全セグメント収集済み。再収集したい場合はセグメントタブの「企業収集」チェックを外してください)"
@@ -255,7 +255,7 @@ export default function CompaniesPage() {
             disabled={researching || enriching}
             className="px-4 py-1.5 bg-gray-900 text-white rounded-lg disabled:opacity-40"
           >
-            {researching ? "調査中..." : "AIで探して登録(5セグメントずつ)"}
+            {researching ? "調査中..." : "検索して登録(10セグメントずつ)"}
           </button>
           <button
             onClick={enrich}
@@ -268,7 +268,7 @@ export default function CompaniesPage() {
         {progress && <p className="text-xs text-gray-500">{progress}</p>}
         {enrichMessage && <p className="text-xs text-gray-500">{enrichMessage}</p>}
         <p className="text-xs text-gray-400">
-          AIリサーチはサイト名・URL・運営会社名の発見のみ(低コスト)。法人番号・従業員数・資本金は右のボタンでgBizINFO(経産省・無料)から補完します(一度に30社ずつ)
+          Google検索の上位5件から該当サイトを選別し、サイトのフッターから運営会社名を抽出して登録します(1セグメント数秒・AIはサイト選別のみで$0.001以下)。法人番号・従業員数・資本金は右のボタンでgBizINFO(経産省・無料)から補完します(一度に30社ずつ)
         </p>
       </div>
 

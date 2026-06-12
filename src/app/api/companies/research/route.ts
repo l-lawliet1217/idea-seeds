@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { friendlyClaudeError, researchCompanies } from "@/lib/claude";
-import { extractDomain } from "@/lib/serp";
+import { friendlyClaudeError, judgeSiteRelevance } from "@/lib/claude";
+import {
+  extractCompanyName,
+  extractDomain,
+  extractSiteTitle,
+  fetchSerpResults,
+} from "@/lib/serp";
 import { extractUsage, logApiUsage } from "@/lib/usage";
 
-export const maxDuration = 300;
+export const maxDuration = 120;
 
-// 1セグメント分のAI企業リサーチを実行し、見つかった企業を登録する
+// 高速リサーチ:
+// 1. セグメント名でGoogle検索(SerpAPI)→上位5件
+// 2. 該当しそうなサイトだけHaiku(軽量)で選別
+// 3. 採用サイトのHTMLからサービス名(title)と運営会社名(フッター)を抽出して登録
 export async function POST(req: Request) {
   const body = await req.json();
   if (!body.segment_id) {
@@ -23,34 +31,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "セグメントが見つかりません" }, { status: 404 });
   }
 
-  try {
-    const outcome = await researchCompanies(segment.name);
-    const usage = extractUsage(outcome.usage);
-    const costUsd = await logApiUsage("research", "claude-sonnet-4-6", usage, {
-      segment_id: segment.id,
-      segment: segment.name,
-    });
-    // 調査が完了したセグメントは収集済みフラグを立て、以降のリサーチから除外
-    await supabase
-      .from("segments")
-      .update({ research_done: true })
-      .eq("id", segment.id);
+  if (!process.env.SERPAPI_KEY) {
+    return NextResponse.json(
+      {
+        error:
+          "SERPAPI_KEY が設定されていません。https://serpapi.com/ でキーを取得し(無料枠あり)、Vercelの環境変数に設定してください",
+      },
+      { status: 503 }
+    );
+  }
 
-    const results = outcome.companies;
-    if (results.length === 0) {
+  try {
+    // 1. Google検索の上位5件
+    const serp = await fetchSerpResults(segment.name, 5, "desktop");
+    if (serp.length === 0) {
+      await supabase
+        .from("segments")
+        .update({ research_done: true })
+        .eq("id", segment.id);
       return NextResponse.json({
         segment: segment.name,
-        inserted: 0,
         found: 0,
-        cost_usd: costUsd,
-        web_searches: usage.web_searches,
+        inserted: 0,
+        cost_usd: 0,
       });
     }
 
-    // 既存企業との重複をドメインで除外
-    const domains = results
-      .map((r) => extractDomain(r.service_url))
-      .filter((d): d is string => !!d);
+    // 既存企業とドメイン重複するものは候補から外す
     const { data: existing } = await supabase
       .from("companies")
       .select("service_url, website_url");
@@ -60,27 +67,72 @@ export async function POST(req: Request) {
         .map((u) => (u ? extractDomain(u) : null))
         .filter(Boolean)
     );
+    const seen = new Set<string>();
+    const candidates = serp.filter((r) => {
+      const domain = extractDomain(r.url);
+      if (!domain || existingDomains.has(domain) || seen.has(domain)) return false;
+      seen.add(domain);
+      return true;
+    });
 
+    // 2. 該当しそうなサイトをHaikuで選別(数百トークンの軽い呼び出し)
+    let picked = candidates;
+    let costUsd = 0;
+    if (candidates.length > 0) {
+      const judged = await judgeSiteRelevance(
+        segment.name,
+        candidates.map((c) => ({ title: c.title, url: c.url }))
+      );
+      costUsd = await logApiUsage(
+        "research_fast",
+        "claude-haiku-4-5",
+        extractUsage(judged.usage),
+        { segment_id: segment.id, segment: segment.name }
+      );
+      picked = judged.indices.map((i) => candidates[i]).slice(0, 3);
+    }
+
+    // 3. 各サイトのHTMLからサービス名と運営会社名を抽出(並列・無料)
     const now = new Date().toISOString();
-    const rows = results
-      .filter((r) => {
-        const domain = extractDomain(r.service_url);
-        return domain && !existingDomains.has(domain);
-      })
-      .map((r) => ({
-        segment_id: segment.id,
-        name: r.company_name ?? `${r.service_name} 運営会社(未特定)`,
-        service_name: r.service_name,
-        service_url: r.service_url,
-        website_url: r.service_url,
-        employees: r.employees,
-        capital_jpy: r.capital_jpy,
-        phone: r.phone,
-        status: "candidate",
-        source: "ai_research",
-        source_url: r.service_url,
-        collected_at: now,
-      }));
+    const rows = (
+      await Promise.all(
+        picked.map(async (site) => {
+          let serviceName = site.title;
+          let companyName: string | null = null;
+          try {
+            const res = await fetch(site.url, {
+              headers: { "User-Agent": "Mozilla/5.0 (compatible; AirERP/1.0)" },
+              signal: AbortSignal.timeout(10000),
+              cache: "no-store",
+            });
+            if (res.ok) {
+              const html = await res.text();
+              serviceName = extractSiteTitle(html) ?? site.title;
+              companyName = extractCompanyName(html);
+            }
+          } catch {
+            // 取得失敗時は検索結果のタイトルだけで登録
+          }
+          return {
+            segment_id: segment.id,
+            name: companyName ?? `${serviceName ?? site.url} 運営会社(未特定)`,
+            service_name: serviceName,
+            service_url: site.url,
+            website_url: site.url,
+            status: "candidate",
+            source: "serp_research",
+            source_url: site.url,
+            collected_at: now,
+          };
+        })
+      )
+    ).filter(Boolean);
+
+    // 調査が完了したセグメントは収集済みフラグを立てる
+    await supabase
+      .from("segments")
+      .update({ research_done: true })
+      .eq("id", segment.id);
 
     let inserted = 0;
     if (rows.length > 0) {
@@ -93,13 +145,13 @@ export async function POST(req: Request) {
       }
       inserted = rows.length;
     }
+
     return NextResponse.json({
       segment: segment.name,
-      found: results.length,
+      found: candidates.length,
       inserted,
-      skipped: results.length - inserted,
+      skipped: candidates.length - inserted,
       cost_usd: costUsd,
-      web_searches: usage.web_searches,
     });
   } catch (err) {
     return NextResponse.json({ error: friendlyClaudeError(err) }, { status: 500 });

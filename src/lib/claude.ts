@@ -352,89 +352,54 @@ ${sourceText.slice(0, 8000)}
   };
 }
 
-// セグメント(例: 北海道特化型採用ポータル)に該当する実在のWebサービスを
-// Claudeのweb検索ツールで探す
-export type ResearchedCompany = {
-  service_name: string;
-  service_url: string;
-  company_name: string | null;
-  employees: number | null;
-  capital_jpy: number | null;
-  phone: string | null;
-};
-
-export type ResearchOutcome = {
-  companies: ResearchedCompany[];
+// 検索上位サイトのうち、セグメントに本当に該当するものをHaiku(軽量・低コスト)で選別する
+export type SiteRelevanceResult = {
+  indices: number[];
   usage: Anthropic.Messages.Usage;
 };
 
-export async function researchCompanies(
-  segmentName: string
-): Promise<ResearchOutcome> {
+export async function judgeSiteRelevance(
+  segmentName: string,
+  sites: { title: string | null; url: string }[]
+): Promise<SiteRelevanceResult> {
+  const list = sites
+    .map((s, i) => `[${i}] ${s.title ?? "(タイトル不明)"} - ${s.url}`)
+    .join("\n");
   const res = await getClient().messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1500,
-    tools: [
-      {
-        type: "web_search_20250305",
-        name: "web_search",
-        max_uses: 3,
-      },
-    ] as unknown as Anthropic.Messages.ToolUnion[],
+    model: "claude-haiku-4-5",
+    max_tokens: 200,
     messages: [
       {
         role: "user",
-        content: `「${segmentName}」に該当する、実在する日本のWebサービス/サイトをweb検索で最大5件探してください。
-例: セグメントが「北海道特化型採用ポータル」なら、北海道に特化した採用・求人ポータルサイトを探す。
+        content: `以下はGoogle検索「${segmentName}」の上位結果です。
+このうち「${segmentName}」という特化型サービスのサイト本体に該当しそうなものの番号だけを選んでください。
+除外: ニュース記事、ブログ、まとめ/比較記事、求人広告の個別ページ、大手総合サイト、Wikipedia。
 
-各サイトについて報告するのは次の3つだけです(社員数・資本金などの深掘りは不要):
-- サービス/サイト名
-- サイトURL
-- 運営会社名(検索結果から分かる場合のみ。分からなければnull)
+${list}
 
-ルール:
-- 検索は最小限に(1〜3回)
-- 実在が確認できたサイトのみ。捏造禁止
-- 大手総合サイト(リクナビ等の非特化型)は除外し、セグメントに本当に特化したものだけ
-
-最後に次のJSON配列のみを出力してください(コードブロック不要):
-[{"service_name": "...", "service_url": "https://...", "company_name": "..."}]`,
+JSON配列のみ出力(該当なしなら[]): 例 [0,2]`,
       },
     ],
   });
-
   const text = res.content
-    .filter((block) => block.type === "text")
-    .map((block) => (block as { text: string }).text)
-    .join("\n");
-
-  // 最後に出力されたJSON配列を抽出(検索の途中経過テキストを避ける)
-  const matches = text.match(/\[[\s\S]*?\](?=[^\]]*$)|\[[\s\S]*\]/g) ?? [];
-  for (let i = matches.length - 1; i >= 0; i--) {
+    .filter((b) => b.type === "text")
+    .map((b) => (b as { text: string }).text)
+    .join("");
+  const m = text.match(/\[[^\]]*\]/);
+  let indices: number[] = [];
+  if (m) {
     try {
-      const parsed = JSON.parse(matches[i]);
+      const parsed = JSON.parse(m[0]);
       if (Array.isArray(parsed)) {
-        const companies = parsed
-          .filter((row) => row && row.service_url)
-          .map((row) => ({
-            service_name: String(row.service_name ?? row.service_url),
-            service_url: String(row.service_url),
-            company_name: row.company_name ? String(row.company_name) : null,
-            employees: Number.isFinite(Number(row.employees))
-              ? Number(row.employees)
-              : null,
-            capital_jpy: Number.isFinite(Number(row.capital_jpy))
-              ? Number(row.capital_jpy)
-              : null,
-            phone: row.phone ? String(row.phone) : null,
-          }));
-        return { companies, usage: res.usage };
+        indices = parsed
+          .map(Number)
+          .filter((n) => Number.isInteger(n) && n >= 0 && n < sites.length);
       }
     } catch {
-      // 次の候補を試す
+      indices = [];
     }
   }
-  throw new Error("リサーチ結果のJSONを抽出できませんでした");
+  return { indices, usage: res.usage };
 }
 
 // アウトリーチ文を指示に従って書き直す
