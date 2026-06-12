@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 export async function GET() {
   const supabase = getSupabaseAdmin();
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+  const today = new Date().toISOString().slice(0, 10);
 
   const count = (table: string, filter?: (q: any) => any) => {
     let q = supabase.from(table).select("*", { count: "exact", head: true });
@@ -25,6 +26,8 @@ export async function GET() {
     callsWeek,
     appointmentsWeek,
     latestSerp,
+    giversOverdue,
+    giversOpenTriggers,
   ] = await Promise.all([
     count("companies"),
     count("companies", (q) => q.eq("status", "candidate")),
@@ -44,6 +47,8 @@ export async function GET() {
       .order("fetched_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    count("givers_friends", (q) => q.lte("next_contact_date", today).neq("tier", "T5")),
+    count("givers_triggers", (q) => q.eq("status", "open")),
   ]);
 
   const firstError = [companiesTotal, contentsDraft, keywordsTracked, callsWeek].find(
@@ -73,5 +78,9 @@ export async function GET() {
       appointments_week: appointmentsWeek.count ?? 0,
     },
     serp: { last_fetched_at: latestSerp.data?.fetched_at ?? null },
+    givers: {
+      overdue: giversOverdue.count ?? 0,
+      open_triggers: giversOpenTriggers.count ?? 0,
+    },
   });
 }

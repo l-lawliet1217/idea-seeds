@@ -283,3 +283,79 @@ ${input.context ? `補足: ${input.context}` : ""}
   const text = res.content[0].type === "text" ? res.content[0].text : "";
   return text.trim();
 }
+
+// URL先のページや議事録テキストから友人プロフィールを抽出する
+export type ExtractedProfile = {
+  name: string;
+  company: string | null;
+  position: string | null;
+  industry: string | null;
+  phase: string | null;
+  wants_to_meet: string | null;
+  needs: string | null;
+  contributions: string | null;
+  notes: string | null;
+};
+
+export async function extractFriendProfile(
+  sourceText: string
+): Promise<ExtractedProfile> {
+  const res = await getClient().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1500,
+    messages: [
+      {
+        role: "user",
+        content: `以下のテキスト(Webページ・SNSプロフィール・議事録など)から、経営者ネットワーク管理用の人物プロフィールを抽出してください。
+記載がない項目は null。推測で埋めない。notesには出典に書かれた特徴的な事実を2-3行で。
+
+テキスト:
+${sourceText.slice(0, 8000)}
+
+次のJSONのみを出力(コードブロック不要):
+{"name": "氏名", "company": "会社名", "position": "役職", "industry": "業界", "phase": "経営フェーズ(シード/シリーズA/上場など)", "wants_to_meet": "会いたい人の特徴", "needs": "ニーズ", "contributions": "貢献できること", "notes": "メモ"}`,
+      },
+    ],
+  });
+  const text = res.content[0].type === "text" ? res.content[0].text : "";
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("プロフィール抽出のJSONを取得できませんでした");
+  const parsed = JSON.parse(match[0]);
+  if (!parsed.name) throw new Error("氏名を抽出できませんでした");
+  const str = (v: unknown) => (v ? String(v) : null);
+  return {
+    name: String(parsed.name),
+    company: str(parsed.company),
+    position: str(parsed.position),
+    industry: str(parsed.industry),
+    phase: str(parsed.phase),
+    wants_to_meet: str(parsed.wants_to_meet),
+    needs: str(parsed.needs),
+    contributions: str(parsed.contributions),
+    notes: str(parsed.notes),
+  };
+}
+
+// アウトリーチ文を指示に従って書き直す
+export async function rewriteMessage(
+  message: string,
+  instruction: string
+): Promise<string> {
+  const res = await getClient().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1500,
+    messages: [
+      {
+        role: "user",
+        content: `以下のメッセージを指示に従って書き直してください。本文のみを出力(前置き不要)。
+
+指示: ${instruction}
+
+メッセージ:
+${message}`,
+      },
+    ],
+  });
+  const text = res.content[0].type === "text" ? res.content[0].text : "";
+  return text.trim();
+}

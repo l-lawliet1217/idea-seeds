@@ -16,6 +16,7 @@ type Dashboard = {
   keywords: { tracked: number };
   calls: { week: number; appointments_week: number };
   serp: { last_fetched_at: string | null };
+  givers: { overdue: number; open_triggers: number };
 };
 
 export default function DashboardPage() {
@@ -85,6 +86,10 @@ export default function DashboardPage() {
               ? new Date(data.serp.last_fetched_at).toLocaleString("ja-JP")
               : "未取得"}
           </div>
+        </Panel>
+        <Panel title="GiversNetwork" href="/givers">
+          <Row label="接触超過" value={data.givers?.overdue ?? 0} />
+          <Row label="未対応トリガー" value={data.givers?.open_triggers ?? 0} />
         </Panel>
       </div>
     </div>

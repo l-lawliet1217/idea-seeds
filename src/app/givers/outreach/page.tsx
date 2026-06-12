@@ -66,6 +66,21 @@ export default function OutreachPage() {
     load();
   }
 
+  async function rewrite(id: string, instruction: string) {
+    setError("");
+    const res = await fetch(`/api/givers/outreach/${id}/rewrite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instruction }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error ?? "書き換えに失敗しました");
+      return;
+    }
+    load();
+  }
+
   async function remove(id: string) {
     await fetch(`/api/givers/outreach/${id}`, { method: "DELETE" });
     load();
@@ -142,6 +157,7 @@ export default function OutreachPage() {
             onSave={(message) => patch(item.id, { message })}
             onSent={() => patch(item.id, { status: "sent" })}
             onDelete={() => remove(item.id)}
+            onRewrite={(instruction) => rewrite(item.id, instruction)}
           />
         ))}
       </div>
@@ -154,14 +170,20 @@ function OutreachCard({
   onSave,
   onSent,
   onDelete,
+  onRewrite,
 }: {
   item: GiverOutreach;
   onSave: (message: string) => void;
   onSent: () => void;
   onDelete: () => void;
+  onRewrite: (instruction: string) => Promise<void> | void;
 }) {
   const [message, setMessage] = useState(item.message);
   const [copied, setCopied] = useState(false);
+  const [instruction, setInstruction] = useState("");
+  const [rewriting, setRewriting] = useState(false);
+
+  useEffect(() => setMessage(item.message), [item.message]);
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-2 text-sm">
@@ -182,7 +204,26 @@ function OutreachCard({
         className="w-full border border-gray-200 rounded-lg px-3 py-2 leading-relaxed disabled:bg-gray-50 disabled:text-gray-500"
       />
       {item.status === "draft" && (
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center flex-wrap">
+          <input
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            placeholder="書き換え指示(例: もっとカジュアルに)"
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs w-56"
+          />
+          <button
+            onClick={async () => {
+              if (!instruction.trim()) return;
+              setRewriting(true);
+              await onRewrite(instruction.trim());
+              setRewriting(false);
+              setInstruction("");
+            }}
+            disabled={rewriting || !instruction.trim()}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs disabled:opacity-40"
+          >
+            {rewriting ? "書き換え中..." : "AIで書き換え"}
+          </button>
           <button
             onClick={() => onSave(message)}
             className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs"
