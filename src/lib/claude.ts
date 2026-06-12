@@ -373,7 +373,7 @@ export async function judgeSiteRelevance(
         role: "user",
         content: `以下はGoogle検索「${segmentName}」の上位結果です。
 このうち「${segmentName}」という特化型サービスのサイト本体に該当しそうなものの番号だけを選んでください。
-除外: ニュース記事、ブログ、まとめ/比較記事、求人広告の個別ページ、大手総合サイト、Wikipedia。
+除外: ニュース記事、ブログ、まとめ/比較記事、求人広告の個別ページ、大手総合サイト、Wikipedia、運営会社のコーポレートサイト(会社案内が主目的のサイト。サービスサイト本体のみを選ぶ)。
 
 ${list}
 
