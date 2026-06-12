@@ -101,18 +101,20 @@ export function collectCompanyEvidence(
   return [...out].slice(0, 10);
 }
 
-// 会社概要・運営会社・特定商取引法ページへのリンクを探す(最大2件)
+// 会社概要・運営会社・特定商取引法ページへのリンクを探す(最大3件)
+// 画像リンク(alt属性)やtitle属性のラベルも対象にする
 export function findCompanyInfoLinks(html: string, baseUrl: string): string[] {
   const links: string[] = [];
-  const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]{0,100}?)<\/a>/gi;
+  const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]{0,300}?)<\/a>/gi;
+  const labelPattern =
+    /会社概要|会社案内|運営会社|会社情報|企業情報|運営者|運営元|特定商取引|コーポレート/;
+  const hrefPattern =
+    /company|corporate|about|profile|tokutei|kaisya|kaisha|outline|operator|unei|gaiyou?/i;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null && links.length < 6) {
+  while ((m = re.exec(html)) !== null && links.length < 8) {
     const href = m[1];
-    const label = m[2].replace(/<[^>]+>/g, "");
-    if (
-      /会社概要|運営会社|会社情報|企業情報|運営者情報|特定商取引|コーポレートサイト/.test(label) ||
-      /company|corporate|about-?us|profile|tokutei|kaisya|kaisha|outline/i.test(href)
-    ) {
+    // 内側HTMLそのまま判定する(altやtitle属性のラベルも拾うため)
+    if (labelPattern.test(m[2]) || hrefPattern.test(href)) {
       try {
         links.push(new URL(href, baseUrl).toString());
       } catch {
@@ -120,7 +122,7 @@ export function findCompanyInfoLinks(html: string, baseUrl: string): string[] {
       }
     }
   }
-  return [...new Set(links)].slice(0, 2);
+  return [...new Set(links)].slice(0, 3);
 }
 
 // <title> からサービス名を取り出す(区切り文字以降のキャッチコピーは落とす)
