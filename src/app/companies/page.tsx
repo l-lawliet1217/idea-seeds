@@ -127,24 +127,42 @@ export default function CompaniesPage() {
     setError("");
     let total = 0;
     let runCost = 0;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
     for (let i = 0; i < queue.length; i++) {
       const seg = queue[i];
-      setProgress(
-        `(${i + 1}/${queue.length}) ${seg.name} を調査中... 累計コスト $${runCost.toFixed(3)}`
-      );
-      try {
-        const res = await fetch("/api/companies/research", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ segment_id: seg.id }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          total += data.inserted ?? 0;
-          runCost += data.cost_usd ?? 0;
-        } else setError(data.error ?? "一部のセグメントで失敗しました");
-      } catch {
-        setError("通信エラーが発生しました");
+      let done = false;
+      for (let attempt = 0; attempt < 3 && !done; attempt++) {
+        setProgress(
+          `(${i + 1}/${queue.length}) ${seg.name} を調査中... 累計コスト $${runCost.toFixed(3)}`
+        );
+        try {
+          const res = await fetch("/api/companies/research", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ segment_id: seg.id }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            total += data.inserted ?? 0;
+            runCost += data.cost_usd ?? 0;
+            done = true;
+          } else if (/レート制限/.test(data.error ?? "") && attempt < 2) {
+            // トークン上限(分単位)に当たった場合は待機して同じセグメントを再試行
+            for (let s = 60; s > 0; s -= 5) {
+              setProgress(
+                `(${i + 1}/${queue.length}) ${seg.name}: レート制限のため${s}秒待機中...(自動で再開します)`
+              );
+              await sleep(5000);
+            }
+          } else {
+            setError(data.error ?? "一部のセグメントで失敗しました");
+            done = true;
+          }
+        } catch {
+          setError("通信エラーが発生しました");
+          done = true;
+        }
       }
       load();
     }
