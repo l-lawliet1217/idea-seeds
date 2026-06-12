@@ -4,7 +4,8 @@ let _client: Anthropic | null = null;
 
 function getClient(): Anthropic {
   if (!_client) {
-    _client = new Anthropic();
+    // レート制限(429)はSDKが指数バックオフで自動リトライする。回数を多めに設定
+    _client = new Anthropic({ maxRetries: 5 });
   }
   return _client;
 }
