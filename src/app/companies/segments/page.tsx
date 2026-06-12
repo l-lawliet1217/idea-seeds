@@ -133,13 +133,14 @@ export default function SegmentsPage() {
               <th className="text-left px-4 py-2 font-medium">セグメント</th>
               <th className="text-left px-4 py-2 font-medium">ビジネスモデル</th>
               <th className="text-left px-4 py-2 font-medium">特化先</th>
+              <th className="text-left px-4 py-2 font-medium">特化先DB</th>
               <th className="text-right px-4 py-2 font-medium">操作</th>
             </tr>
           </thead>
           <tbody>
             {segments.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-gray-400">
+                <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
                   セグメントが未作成です
                 </td>
               </tr>
@@ -152,6 +153,9 @@ export default function SegmentsPage() {
                 </td>
                 <td className="px-4 py-2 text-gray-500">
                   {seg.industries?.name ?? "-"}
+                </td>
+                <td className="px-4 py-2 text-gray-500">
+                  {seg.industries?.industry_databases?.name ?? "-"}
                 </td>
                 <td className="px-4 py-2 text-right">
                   <button

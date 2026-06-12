@@ -52,6 +52,7 @@ export type Industry = {
   jsic_code: string | null;
   source_note: string | null;
   database_id: string | null;
+  industry_databases?: { name: string } | null;
 };
 
 export type Segment = {
