@@ -7,6 +7,7 @@ const MIGRATION_MARKERS: { file: string; table: string }[] = [
   { file: "00003_givers.sql", table: "givers_friends" },
   { file: "00004_givers_ext.sql", table: "givers_introductions" },
   { file: "00005_industry_databases.sql", table: "industry_databases" },
+  { file: "00007_api_usage.sql", table: "api_usage_logs" },
 ];
 
 // 列追加マイグレーションの確認(代表列をselectして判定)
