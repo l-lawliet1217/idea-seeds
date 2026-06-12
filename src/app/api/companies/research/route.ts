@@ -93,8 +93,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    // 1. Google検索の上位5件
-    const serp = await fetchSerpResults(segment.name, 5, "desktop");
+    // 1. Google検索の上位10件(SerpAPIは1検索単位の課金なので件数を増やしてもコスト同じ)
+    // セグメント名の「/」などを除去して自然な検索クエリにする
+    const query = segment.name.replace(/\s*\/\s*/g, " ").replace(/\s+/g, " ").trim();
+    const serp = await fetchSerpResults(query, 10, "desktop");
     if (serp.length === 0) {
       await supabase
         .from("segments")
@@ -140,7 +142,7 @@ export async function POST(req: Request) {
         extractUsage(judged.usage),
         { segment_id: segment.id, segment: segment.name }
       );
-      picked = judged.indices.map((i) => candidates[i]).slice(0, 3);
+      picked = judged.indices.map((i) => candidates[i]).slice(0, 5);
     }
 
     // 3. 各サイトのフッターと会社情報ページから運営会社名の証拠を収集(並列・無料)
