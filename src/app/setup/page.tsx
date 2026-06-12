@@ -6,6 +6,7 @@ type Health = {
   env: Record<string, boolean>;
   auth: string;
   database: string;
+  pending_migrations?: string[];
 };
 
 const ENV_LABELS: { key: string; label: string; required: boolean }[] = [
@@ -37,7 +38,7 @@ const DB_MESSAGES: Record<string, { ok: boolean; text: string }> = {
   ok: { ok: true, text: "データベースに接続でき、スキーマも適用済みです" },
   migration_required: {
     ok: false,
-    text: "テーブルが存在しません。SupabaseのSQL Editorで supabase/migrations/00001_init.sql と 00002_profiles_trigger.sql を順に実行してください",
+    text: "未適用のマイグレーションがあります。下記のSQLをSupabaseのSQL Editorで番号順に実行してください",
   },
   unreachable: { ok: false, text: "データベースに到達できません(プロジェクト停止の可能性)" },
   env_missing: { ok: false, text: "SUPABASE_SERVICE_ROLE_KEY が未設定です" },
@@ -81,6 +82,22 @@ export default function SetupPage() {
               label="データベース(スキーマ)"
               detail={DB_MESSAGES[health.database]?.text ?? health.database}
             />
+            {(health.pending_migrations?.length ?? 0) > 0 && (
+              <ul className="ml-12 space-y-1 text-xs">
+                {health.pending_migrations!.map((file) => (
+                  <li key={file}>
+                    <a
+                      href={`https://github.com/l-lawliet1217/idea-seeds/blob/main/supabase/migrations/${file}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      supabase/migrations/{file}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Section>
 
           <Section title="環境変数(必須)">
