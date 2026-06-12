@@ -140,7 +140,7 @@ export async function POST(req: Request) {
       names = extraction.names;
       costUsd += await logApiUsage(
         "research_fast",
-        "claude-haiku-4-5",
+        "claude-sonnet-4-6",
         extractUsage(extraction.usage),
         { segment_id: segment.id, segment: segment.name, step: "extract_company" }
       );
