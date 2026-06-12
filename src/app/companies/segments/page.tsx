@@ -83,6 +83,19 @@ export default function SegmentsPage() {
     load();
   }
 
+  async function removeSegment(seg: Segment) {
+    if (!confirm(`「${seg.name}」を削除しますか?`)) return;
+    setError("");
+    setMessage("");
+    const res = await fetch(`/api/segments/${seg.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error ?? "削除に失敗しました");
+      return;
+    }
+    load();
+  }
+
   const bulkDbCount = databases.find((d) => d.id === bulkDbId)?.industries?.[0]?.count;
 
   return (
@@ -181,12 +194,13 @@ export default function SegmentsPage() {
               <th className="text-left px-4 py-2 font-medium">セグメント</th>
               <th className="text-left px-4 py-2 font-medium">ビジネスモデル</th>
               <th className="text-left px-4 py-2 font-medium">特化先</th>
+              <th className="text-right px-4 py-2 font-medium">操作</th>
             </tr>
           </thead>
           <tbody>
             {segments.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-gray-400">
+                <td colSpan={4} className="px-4 py-6 text-center text-gray-400">
                   セグメントが未作成です
                 </td>
               </tr>
@@ -199,6 +213,14 @@ export default function SegmentsPage() {
                 </td>
                 <td className="px-4 py-2 text-gray-500">
                   {seg.industries?.name ?? "-"}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <button
+                    onClick={() => removeSegment(seg)}
+                    className="text-xs text-red-500 hover:text-red-700"
+                  >
+                    削除
+                  </button>
                 </td>
               </tr>
             ))}
