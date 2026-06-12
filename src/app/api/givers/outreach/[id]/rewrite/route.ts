@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { rewriteMessage } from "@/lib/claude";
+import { friendlyClaudeError, rewriteMessage } from "@/lib/claude";
 
 export const maxDuration = 300;
 
@@ -44,7 +44,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "書き換えに失敗しました" },
+      { error: friendlyClaudeError(err) },
       { status: 500 }
     );
   }

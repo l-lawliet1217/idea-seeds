@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { generateKeywords } from "@/lib/claude";
+import { friendlyClaudeError, generateKeywords } from "@/lib/claude";
 
 export async function POST(req: Request) {
   const body = await req.json();
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ keywords });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "生成に失敗しました" },
+      { error: friendlyClaudeError(err) },
       { status: 500 }
     );
   }

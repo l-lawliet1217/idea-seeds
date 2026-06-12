@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { researchCompanies } from "@/lib/claude";
+import { friendlyClaudeError, researchCompanies } from "@/lib/claude";
 import { extractDomain } from "@/lib/serp";
 import { extractUsage, logApiUsage } from "@/lib/usage";
 
@@ -93,9 +93,6 @@ export async function POST(req: Request) {
       web_searches: usage.web_searches,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "リサーチに失敗しました" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: friendlyClaudeError(err) }, { status: 500 });
   }
 }
