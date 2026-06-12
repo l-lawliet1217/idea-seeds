@@ -373,12 +373,12 @@ export async function researchCompanies(
 ): Promise<ResearchOutcome> {
   const res = await getClient().messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2500,
+    max_tokens: 1500,
     tools: [
       {
         type: "web_search_20250305",
         name: "web_search",
-        max_uses: 4,
+        max_uses: 3,
       },
     ] as unknown as Anthropic.Messages.ToolUnion[],
     messages: [
@@ -387,22 +387,18 @@ export async function researchCompanies(
         content: `「${segmentName}」に該当する、実在する日本のWebサービス/サイトをweb検索で最大5件探してください。
 例: セグメントが「北海道特化型採用ポータル」なら、北海道に特化した採用・求人ポータルサイトを探す。
 
-各サイトについて以下を報告してください:
+各サイトについて報告するのは次の3つだけです(社員数・資本金などの深掘りは不要):
 - サービス/サイト名
 - サイトURL
-- 運営会社名
-- 運営会社の社員数
-- 運営会社の資本金(円)
-- 代表電話番号
+- 運営会社名(検索結果から分かる場合のみ。分からなければnull)
 
 ルール:
-- 検索は最小限に(コスト削減のため、まとめて調べられるクエリを工夫する)
+- 検索は最小限に(1〜3回)
 - 実在が確認できたサイトのみ。捏造禁止
-- 検索結果から確認できなかった項目は深追いせず null にする
 - 大手総合サイト(リクナビ等の非特化型)は除外し、セグメントに本当に特化したものだけ
 
 最後に次のJSON配列のみを出力してください(コードブロック不要):
-[{"service_name": "...", "service_url": "https://...", "company_name": "...", "employees": 数値またはnull, "capital_jpy": 数値またはnull, "phone": "..."}]`,
+[{"service_name": "...", "service_url": "https://...", "company_name": "..."}]`,
       },
     ],
   });

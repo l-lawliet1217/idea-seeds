@@ -31,6 +31,8 @@ export default function CompaniesPage() {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [monthUsd, setMonthUsd] = useState<number | null>(null);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichMessage, setEnrichMessage] = useState("");
 
   const loadUsage = useCallback(async () => {
     const data = await fetch("/api/usage").then((r) => r.json()).catch(() => null);
@@ -177,6 +179,36 @@ export default function CompaniesPage() {
     loadSegments();
   }
 
+  async function enrich() {
+    setEnriching(true);
+    setError("");
+    setEnrichMessage("gBizINFOから取得中...(1社あたり1秒程度)");
+    try {
+      const res = await fetch("/api/companies/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          business_model_id: businessModelId || undefined,
+          database_id: databaseId || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "取得に失敗しました");
+        setEnrichMessage("");
+      } else {
+        setEnrichMessage(
+          `取得完了: ${data.updated}社を更新(該当なし: ${data.not_found}件、残り未処理: ${data.remaining}件)`
+        );
+        load();
+      }
+    } catch {
+      setError("通信エラーが発生しました");
+      setEnrichMessage("");
+    }
+    setEnriching(false);
+  }
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">企業管理</h1>
@@ -209,16 +241,23 @@ export default function CompaniesPage() {
           </select>
           <button
             onClick={research}
-            disabled={researching}
+            disabled={researching || enriching}
             className="px-4 py-1.5 bg-gray-900 text-white rounded-lg disabled:opacity-40"
           >
             {researching ? "調査中..." : "AIで探して登録(5セグメントずつ)"}
           </button>
+          <button
+            onClick={enrich}
+            disabled={researching || enriching}
+            className="px-4 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40"
+          >
+            {enriching ? "取得中..." : "法人番号・従業員数・資本金を取得(無料)"}
+          </button>
         </div>
         {progress && <p className="text-xs text-gray-500">{progress}</p>}
+        {enrichMessage && <p className="text-xs text-gray-500">{enrichMessage}</p>}
         <p className="text-xs text-gray-400">
-          例: 都道府県×特化型採用ポータル →
-          北海道に特化した採用ポータルサイトのサイト名・URL・運営会社・社員数・資本金・代表電話を調査して登録します(1セグメント30秒〜1分)
+          AIリサーチはサイト名・URL・運営会社名の発見のみ(低コスト)。法人番号・従業員数・資本金は右のボタンでgBizINFO(経産省・無料)から補完します(一度に30社ずつ)
         </p>
       </div>
 
