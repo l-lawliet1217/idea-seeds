@@ -6,6 +6,67 @@ import GiversNav from "./givers-nav";
 import { daysUntilBirthday } from "@/lib/givers";
 import { FRIEND_TIERS, FriendTier, GiverFriend } from "@/types";
 
+function ExtractPanel() {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function extract() {
+    if (!input.trim()) return;
+    setBusy(true);
+    setError("");
+    const isUrl = /^https?:\/\//.test(input.trim());
+    const res = await fetch("/api/givers/friends/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(isUrl ? { url: input.trim() } : { text: input }),
+    });
+    const data = await res.json();
+    setBusy(false);
+    if (!res.ok) {
+      setError(data.error ?? "抽出に失敗しました");
+      return;
+    }
+    location.href = `/givers/${data.id}`;
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-3 text-sm">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-gray-600 hover:text-gray-900 text-sm font-medium"
+      >
+        {open ? "閉じる" : "AIで取り込み(URL・議事録テキストからプロフィール抽出)"}
+      </button>
+      {open && (
+        <div className="mt-3 space-y-2">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            rows={4}
+            placeholder="プロフィールページのURL、またはSNSプロフィール・議事録などのテキストを貼り付け"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2"
+          />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={extract}
+              disabled={busy || !input.trim()}
+              className="px-4 py-1.5 bg-gray-900 text-white rounded-lg disabled:opacity-40"
+            >
+              {busy ? "抽出中..." : "抽出して登録"}
+            </button>
+            <span className="text-xs text-gray-400">
+              登録後に詳細画面が開くので内容を確認・修正してください
+            </span>
+          </div>
+          {error && <p className="text-red-600">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BirthdayBanner() {
   const [upcoming, setUpcoming] = useState<{ name: string; days: number }[]>([]);
 
@@ -101,6 +162,7 @@ export default function GiversPage() {
       </div>
       <GiversNav />
       <BirthdayBanner />
+      <ExtractPanel />
 
       <form
         onSubmit={addFriend}
