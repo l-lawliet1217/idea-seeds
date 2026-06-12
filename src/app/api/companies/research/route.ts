@@ -1,13 +1,32 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { friendlyClaudeError, judgeSiteRelevance } from "@/lib/claude";
 import {
-  extractCompanyName,
+  extractCompanyNames,
+  friendlyClaudeError,
+  judgeSiteRelevance,
+} from "@/lib/claude";
+import {
+  collectCompanyEvidence,
   extractDomain,
   extractSiteTitle,
   fetchSerpResults,
+  findCompanyInfoLinks,
 } from "@/lib/serp";
 import { extractUsage, logApiUsage } from "@/lib/usage";
+
+async function fetchHtml(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; AirERP/1.0)" },
+      signal: AbortSignal.timeout(10000),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
 
 export const maxDuration = 120;
 
@@ -92,41 +111,54 @@ export async function POST(req: Request) {
       picked = judged.indices.map((i) => candidates[i]).slice(0, 3);
     }
 
-    // 3. 各サイトのHTMLからサービス名と運営会社名を抽出(並列・無料)
-    const now = new Date().toISOString();
-    const rows = (
-      await Promise.all(
-        picked.map(async (site) => {
-          let serviceName = site.title;
-          let companyName: string | null = null;
-          try {
-            const res = await fetch(site.url, {
-              headers: { "User-Agent": "Mozilla/5.0 (compatible; AirERP/1.0)" },
-              signal: AbortSignal.timeout(10000),
-              cache: "no-store",
-            });
-            if (res.ok) {
-              const html = await res.text();
-              serviceName = extractSiteTitle(html) ?? site.title;
-              companyName = extractCompanyName(html);
+    // 3. 各サイトのフッターと会社情報ページから運営会社名の証拠を収集(並列・無料)
+    const siteData = await Promise.all(
+      picked.map(async (site, index) => {
+        let serviceName = site.title;
+        const evidence: string[] = [];
+        const html = await fetchHtml(site.url);
+        if (html) {
+          serviceName = extractSiteTitle(html) ?? site.title;
+          // トップページはフッター限定(本文中の取引先・掲載企業名を拾わない)
+          evidence.push(...collectCompanyEvidence(html, "footer"));
+          // 会社概要・運営会社・特商法ページがあればそちらも読む
+          for (const link of findCompanyInfoLinks(html, site.url)) {
+            const infoHtml = await fetchHtml(link);
+            if (infoHtml) {
+              evidence.push(...collectCompanyEvidence(infoHtml, "full"));
             }
-          } catch {
-            // 取得失敗時は検索結果のタイトルだけで登録
           }
-          return {
-            segment_id: segment.id,
-            name: companyName ?? `${serviceName ?? site.url} 運営会社(未特定)`,
-            service_name: serviceName,
-            service_url: site.url,
-            website_url: site.url,
-            status: "candidate",
-            source: "serp_research",
-            source_url: site.url,
-            collected_at: now,
-          };
-        })
-      )
-    ).filter(Boolean);
+        }
+        return { index, url: site.url, service_name: serviceName, evidence };
+      })
+    );
+
+    // 4. 証拠から正式社名だけをHaikuで切り出す(助詞混入・本文社名の誤採用を防ぐ)
+    let names: Record<number, string | null> = {};
+    if (siteData.length > 0) {
+      const extraction = await extractCompanyNames(siteData);
+      names = extraction.names;
+      costUsd += await logApiUsage(
+        "research_fast",
+        "claude-haiku-4-5",
+        extractUsage(extraction.usage),
+        { segment_id: segment.id, segment: segment.name, step: "extract_company" }
+      );
+    }
+
+    // 特定できなかった場合は空欄で登録(後からgBizINFOや手動で補完)
+    const now = new Date().toISOString();
+    const rows = siteData.map((site) => ({
+      segment_id: segment.id,
+      name: names[site.index] ?? "",
+      service_name: site.service_name,
+      service_url: site.url,
+      website_url: site.url,
+      status: "candidate",
+      source: "serp_research",
+      source_url: site.url,
+      collected_at: now,
+    }));
 
     // 調査が完了したセグメントは収集済みフラグを立てる
     await supabase

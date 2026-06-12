@@ -55,30 +55,72 @@ export function extractDomain(url: string): string | null {
   }
 }
 
-// ページHTMLから運営会社名らしき文字列を抽出する(コピーライト行を優先)
-export function extractCompanyName(html: string): string | null {
-  const text = html
+function htmlToText(html: string): string {
+  return html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
     .replace(/&copy;/gi, "©")
-    .replace(/&amp;/gi, "&");
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ");
+}
 
-  const companyPattern =
-    /(?:株式会社|有限会社|合同会社)[゠-ヿ぀-ゟ一-鿿Ａ-ｚA-Za-z0-9&．.・ー\-]{1,30}|[゠-ヿ぀-ゟ一-鿿Ａ-ｚA-Za-z0-9&．.・ー\-]{1,30}(?:株式会社|有限会社|合同会社)/g;
-
-  // 1. コピーライト行の近くを優先(運営会社である可能性が高い)
-  const copyrightLines = text.match(/(?:©|Copyright)[^<\n]{0,120}/gi) ?? [];
-  for (const line of copyrightLines) {
-    const m = line.match(companyPattern);
-    if (m) return m[0].trim();
+// ページHTMLから運営会社名の手がかりを集める。
+// scope="footer": トップページ用。<footer>タグ(なければ末尾20%)とコピーライト行・
+//   「運営会社」表記の周辺のみを対象にする。本文中の取引先・掲載企業名(求人サイトの
+//   求人広告内の社名など)を拾わないための制限。
+// scope="full": 会社概要・運営会社・特商法ページ用。ページ全体を対象。
+export function collectCompanyEvidence(
+  html: string,
+  scope: "footer" | "full"
+): string[] {
+  const fullText = htmlToText(html);
+  let target = fullText;
+  if (scope === "footer") {
+    const footerHtml = (html.match(/<footer[\s\S]*?<\/footer>/gi) ?? []).join(" ");
+    target = footerHtml
+      ? htmlToText(footerHtml)
+      : fullText.slice(Math.floor(fullText.length * 0.8));
   }
-  // 2. ページ後半(フッター付近)から探す
-  const tail = text.slice(Math.floor(text.length * 0.6));
-  const tailMatch = tail.match(companyPattern);
-  if (tailMatch) return tailMatch[0].trim();
-  // 3. ページ全体の最初の一致
-  const anyMatch = text.match(companyPattern);
-  return anyMatch ? anyMatch[0].trim() : null;
+
+  const out = new Set<string>();
+  // コピーライト行(実質フッター)と「運営会社」表記はページ全体から拾ってよい
+  for (const m of fullText.match(/(?:©|Copyright)[^©]{0,100}/gi) ?? []) {
+    out.add(`[copyright] ${m.trim().slice(0, 120)}`);
+  }
+  for (const m of fullText.match(/運営(?:会社|者|元)[^。]{0,80}/g) ?? []) {
+    out.add(`[運営会社表記] ${m.trim().slice(0, 120)}`);
+  }
+  // 社名パターンの走査は対象範囲(フッター or 全体)に限定
+  const namePattern =
+    /(?:株式会社|有限会社|合同会社)\s?[^\s、。<>"';:()()]{1,30}|[^\s、。<>"';:()()]{1,30}(?:株式会社|有限会社|合同会社)/g;
+  for (const m of target.match(namePattern) ?? []) {
+    out.add(`[${scope === "footer" ? "フッター" : "会社情報ページ"}] ${m.trim().slice(0, 60)}`);
+    if (out.size >= 10) break;
+  }
+  return [...out].slice(0, 10);
+}
+
+// 会社概要・運営会社・特定商取引法ページへのリンクを探す(最大2件)
+export function findCompanyInfoLinks(html: string, baseUrl: string): string[] {
+  const links: string[] = [];
+  const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]{0,100}?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null && links.length < 6) {
+    const href = m[1];
+    const label = m[2].replace(/<[^>]+>/g, "");
+    if (
+      /会社概要|運営会社|会社情報|企業情報|運営者情報|特定商取引|コーポレートサイト/.test(label) ||
+      /company|corporate|about-?us|profile|tokutei|kaisya|kaisha|outline/i.test(href)
+    ) {
+      try {
+        links.push(new URL(href, baseUrl).toString());
+      } catch {
+        // 不正なURLはスキップ
+      }
+    }
+  }
+  return [...new Set(links)].slice(0, 2);
 }
 
 // <title> からサービス名を取り出す(区切り文字以降のキャッチコピーは落とす)

@@ -402,6 +402,67 @@ JSON配列のみ出力(該当なしなら[]): 例 [0,2]`,
   return { indices, usage: res.usage };
 }
 
+// 各サイトの証拠テキストから「運営会社の正式社名」だけを抽出する(Haiku・低コスト)
+export type CompanyNameExtraction = {
+  names: Record<number, string | null>;
+  usage: Anthropic.Messages.Usage;
+};
+
+export async function extractCompanyNames(
+  sites: { index: number; service_name: string | null; url: string; evidence: string[] }[]
+): Promise<CompanyNameExtraction> {
+  const blocks = sites
+    .map(
+      (s) =>
+        `[${s.index}] サービス: ${s.service_name ?? "?"} (${s.url})\n証拠:\n${s.evidence.map((e) => `- ${e}`).join("\n") || "- (なし)"}`
+    )
+    .join("\n\n");
+
+  const res = await getClient().messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 400,
+    messages: [
+      {
+        role: "user",
+        content: `各サイトについて、証拠テキストから「そのサイトを運営する会社の正式社名」を抽出してください。
+
+厳守するルール:
+- [copyright]や[運営会社表記]の文脈にある社名を最優先する
+- 「株式会社〇〇が運営する」のような助詞・動詞(が運営する、を提供 等)は社名に含めない。社名そのものだけを出す
+- 求人広告・記事・取引先として本文に登場する企業名は運営会社ではないので選ばない
+- 証拠に存在しない社名を推測・生成しない
+- 確信が持てない場合は null
+
+${blocks}
+
+次のJSONのみを出力(コードブロック不要)。キーは各サイトの番号:
+{"0": "株式会社シーズ", "1": null}`,
+      },
+    ],
+  });
+
+  const text = res.content
+    .filter((b) => b.type === "text")
+    .map((b) => (b as { text: string }).text)
+    .join("");
+  const m = text.match(/\{[\s\S]*\}/);
+  const names: Record<number, string | null> = {};
+  if (m) {
+    try {
+      const parsed = JSON.parse(m[0]);
+      for (const [key, value] of Object.entries(parsed)) {
+        const i = Number(key);
+        if (!Number.isInteger(i)) continue;
+        names[i] =
+          typeof value === "string" && value.trim() ? value.trim().slice(0, 60) : null;
+      }
+    } catch {
+      // 解析失敗時は全てnull扱い
+    }
+  }
+  return { names, usage: res.usage };
+}
+
 // アウトリーチ文を指示に従って書き直す
 export async function rewriteMessage(
   message: string,

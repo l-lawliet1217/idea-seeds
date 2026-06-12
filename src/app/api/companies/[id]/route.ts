@@ -30,7 +30,22 @@ export async function GET(_req: Request, { params }: Params) {
   });
 }
 
-const PATCHABLE_FIELDS = ["status", "note", "do_not_contact", "segment_id"] as const;
+export async function DELETE(_req: Request, { params }: Params) {
+  const { id } = await params;
+  const { error } = await getSupabaseAdmin().from("companies").delete().eq("id", id);
+  if (error) {
+    if (error.code === "23503") {
+      return NextResponse.json(
+        { error: "この企業は架電リスト・コンテンツ等で使用中のため削除できません" },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}
+
+const PATCHABLE_FIELDS = ["status", "note", "do_not_contact", "segment_id", "name"] as const;
 
 export async function PATCH(req: Request, { params }: Params) {
   const { id } = await params;

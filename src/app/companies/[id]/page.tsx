@@ -35,12 +35,33 @@ export default function CompanyDetailPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">{company.name}</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {company.segments?.name ?? "セグメント未設定"}
-          {company.corporate_number && ` / 法人番号: ${company.corporate_number}`}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">
+            {company.name || company.service_name || "(社名未取得)"}
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {company.segments?.name ?? "セグメント未設定"}
+            {company.corporate_number && ` / 法人番号: ${company.corporate_number}`}
+          </p>
+        </div>
+        <button
+          onClick={async () => {
+            if (!confirm("この企業を削除しますか?")) return;
+            const res = await fetch(`/api/companies/${company.id}`, {
+              method: "DELETE",
+            });
+            if (res.ok) {
+              location.href = "/companies";
+            } else {
+              const data = await res.json().catch(() => ({}));
+              setError(data.error ?? "削除に失敗しました");
+            }
+          }}
+          className="text-xs text-red-500 hover:text-red-700"
+        >
+          削除
+        </button>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
