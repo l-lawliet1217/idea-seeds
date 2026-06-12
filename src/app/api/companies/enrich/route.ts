@@ -16,6 +16,20 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const supabase = getSupabaseAdmin();
 
+  // gBizINFOのエラーコードを事前に1回だけ確認(全件失敗を防ぐ)
+  try {
+    await searchGbizByName("トヨタ自動車");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const hint = /401|403/.test(message)
+      ? "(トークンが無効か、まだ有効化されていない可能性があります。申請受理メールのトークンを確認してください)"
+      : "";
+    return NextResponse.json(
+      { error: `gBizINFOへの接続テストに失敗しました: ${message}${hint}` },
+      { status: 503 }
+    );
+  }
+
   let query = supabase
     .from("companies")
     .select("id, name")
@@ -55,6 +69,7 @@ export async function POST(req: Request) {
   let updated = 0;
   let notFound = 0;
   let failed = 0;
+  let firstError: string | null = null;
 
   for (const company of targets) {
     try {
@@ -67,6 +82,9 @@ export async function POST(req: Request) {
 
       if (!match) {
         notFound++;
+        console.log(
+          `enrich not_found: "${company.name}" candidates=${results.length}`
+        );
       } else {
         const update: Record<string, unknown> = {
           corporate_number: match.corporate_number,
@@ -82,8 +100,10 @@ export async function POST(req: Request) {
           .from("companies")
           .update(update)
           .eq("id", company.id);
-        if (updateError) failed++;
-        else updated++;
+        if (updateError) {
+          failed++;
+          if (!firstError) firstError = updateError.message;
+        } else updated++;
       }
     } catch (err) {
       // トークン未設定はそのままユーザーに見せる
@@ -91,6 +111,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: err.message }, { status: 503 });
       }
       failed++;
+      const message = err instanceof Error ? err.message : String(err);
+      if (!firstError) firstError = message;
+      console.error(`enrich failed: "${company.name}" ${message}`);
     }
     await sleep(700); // gBizINFOのレート制限対策
   }
@@ -100,6 +123,7 @@ export async function POST(req: Request) {
     updated,
     not_found: notFound,
     failed,
+    first_error: firstError,
     remaining: (companies ?? []).length - targets.length,
   });
 }
