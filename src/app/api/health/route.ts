@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+// マイグレーションごとの代表テーブル(存在チェックで適用状況を判定)
+const MIGRATION_MARKERS: { file: string; table: string }[] = [
+  { file: "00001_init.sql", table: "companies" },
+  { file: "00003_givers.sql", table: "givers_friends" },
+  { file: "00004_givers_ext.sql", table: "givers_introductions" },
+  { file: "00005_industry_databases.sql", table: "industry_databases" },
+];
+
 // セットアップ診断。秘密情報は返さず、設定の有無と接続状態のみ返す
 export async function GET() {
   const env = {
@@ -35,27 +43,35 @@ export async function GET() {
     }
   }
 
-  // DBスキーマの確認(マイグレーション未実行の検出)
+  // マイグレーション適用状況(代表テーブルの存在で判定)
   let database = "env_missing";
+  const pendingMigrations: string[] = [];
   if (url && serviceKey) {
+    const supabase = createClient(url, serviceKey, {
+      auth: { persistSession: false },
+    });
     try {
-      const supabase = createClient(url, serviceKey, {
-        auth: { persistSession: false },
+      const results = await Promise.all(
+        MIGRATION_MARKERS.map((m) =>
+          supabase.from(m.table).select("*", { head: true, count: "exact" })
+        )
+      );
+      let reachable = true;
+      results.forEach((res, i) => {
+        if (!res.error) return;
+        if (res.error.code === "42P01" || /schema cache|does not exist/.test(res.error.message)) {
+          pendingMigrations.push(MIGRATION_MARKERS[i].file);
+        } else {
+          reachable = false;
+        }
       });
-      const { error } = await supabase
-        .from("companies")
-        .select("id", { head: true, count: "exact" });
-      if (!error) {
-        database = "ok";
-      } else if (error.code === "42P01" || /does not exist/.test(error.message)) {
-        database = "migration_required";
-      } else {
-        database = "error";
-      }
+      if (!reachable) database = "error";
+      else if (pendingMigrations.length > 0) database = "migration_required";
+      else database = "ok";
     } catch {
       database = "unreachable";
     }
   }
 
-  return NextResponse.json({ env, auth, database });
+  return NextResponse.json({ env, auth, database, pending_migrations: pendingMigrations });
 }
