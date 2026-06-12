@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { generateContent } from "@/lib/claude";
+import { friendlyClaudeError, generateContent } from "@/lib/claude";
 import { extractDomain } from "@/lib/serp";
 
 const GENERATABLE_TYPES = [
@@ -159,7 +159,7 @@ export async function POST(req: Request) {
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "生成に失敗しました" },
+      { error: friendlyClaudeError(err) },
       { status: 500 }
     );
   }

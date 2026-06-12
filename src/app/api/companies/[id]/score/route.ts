@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { scoreBudget } from "@/lib/claude";
+import { friendlyClaudeError, scoreBudget } from "@/lib/claude";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -47,7 +47,7 @@ export async function POST(_req: Request, { params }: Params) {
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "スコアリングに失敗しました" },
+      { error: friendlyClaudeError(err) },
       { status: 500 }
     );
   }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { findCandidatePairs, pairKey, profileText } from "@/lib/givers";
-import { judgeMatchCandidates } from "@/lib/claude";
+import { friendlyClaudeError, judgeMatchCandidates } from "@/lib/claude";
 import { GiverFriend, MatchCandidate } from "@/types";
 
 export const maxDuration = 300;
@@ -74,7 +74,7 @@ export async function POST() {
     return NextResponse.json({ candidates });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "判定に失敗しました" },
+      { error: friendlyClaudeError(err) },
       { status: 500 }
     );
   }

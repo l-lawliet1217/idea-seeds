@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { generateGiversMessage, GiversMessageKind } from "@/lib/claude";
+import { GiversMessageKind, friendlyClaudeError, generateGiversMessage } from "@/lib/claude";
 import { profileText } from "@/lib/givers";
 
 export const maxDuration = 300;
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "生成に失敗しました" },
+      { error: friendlyClaudeError(err) },
       { status: 500 }
     );
   }

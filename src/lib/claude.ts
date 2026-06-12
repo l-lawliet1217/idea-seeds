@@ -9,6 +9,21 @@ function getClient(): Anthropic {
   return _client;
 }
 
+// Anthropic APIのエラーを利用者向けの日本語に変換する
+export function friendlyClaudeError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/credit balance is too low/i.test(message)) {
+    return "Anthropic APIのクレジット残高が不足しています。https://platform.claude.com/ の Plans & Billing でAPIクレジットを購入してください(Claude.aiの月額サブスクリプションとは別の課金です)";
+  }
+  if (/rate.?limit/i.test(message)) {
+    return "Anthropic APIのレート制限に達しました。数分待ってから再実行してください";
+  }
+  if (/overloaded/i.test(message)) {
+    return "Anthropic APIが混雑しています。少し待ってから再実行してください";
+  }
+  return message;
+}
+
 export type BudgetScoreResult = {
   score: number; // 0-100
   reason: string;

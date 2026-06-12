@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { extractFriendProfile } from "@/lib/claude";
+import { extractFriendProfile, friendlyClaudeError } from "@/lib/claude";
 
 export const maxDuration = 300;
 
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "抽出に失敗しました" },
+      { error: friendlyClaudeError(err) },
       { status: 500 }
     );
   }
