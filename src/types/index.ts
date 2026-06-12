@@ -62,6 +62,7 @@ export type Segment = {
   name: string;
   priority: number;
   is_active: boolean;
+  research_done?: boolean;
   business_models?: BusinessModel;
   industries?: Industry;
 };
