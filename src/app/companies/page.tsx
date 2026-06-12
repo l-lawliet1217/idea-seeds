@@ -197,9 +197,20 @@ export default function CompaniesPage() {
         setError(data.error ?? "取得に失敗しました");
         setEnrichMessage("");
       } else {
-        setEnrichMessage(
-          `取得完了: ${data.updated}社を更新(該当なし: ${data.not_found}件、残り未処理: ${data.remaining}件)`
-        );
+        const parts = [
+          `対象${data.targets}社中、${data.updated}社を更新`,
+          `該当なし: ${data.not_found}件`,
+          `失敗: ${data.failed}件`,
+          `残り未処理: ${data.remaining}件`,
+        ];
+        let message = `取得完了: ${parts.join(" / ")}`;
+        if (data.targets === 0) {
+          message =
+            "対象企業がありません(運営会社名が取得できている&法人番号が未取得の企業が対象です)";
+        } else if (data.first_error) {
+          message += ` / 最初のエラー: ${data.first_error}`;
+        }
+        setEnrichMessage(message);
         load();
       }
     } catch {
