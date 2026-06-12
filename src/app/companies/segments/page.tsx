@@ -86,6 +86,18 @@ export default function SegmentsPage() {
 
   const bulkDbCount = databases.find((d) => d.id === bulkDbId)?.industries?.[0]?.count;
 
+  // 作成済みの組み合わせマトリクス: 特化先DB × ビジネスモデル → セグメント数/収集済み数
+  const matrix = new Map<string, { count: number; done: number }>();
+  for (const seg of segments) {
+    const dbId = seg.industries?.database_id;
+    if (!dbId) continue;
+    const key = `${dbId}:${seg.business_model_id}`;
+    const cell = matrix.get(key) ?? { count: 0, done: 0 };
+    cell.count++;
+    if (seg.research_done) cell.done++;
+    matrix.set(key, cell);
+  }
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">企業管理</h1>
@@ -135,6 +147,77 @@ export default function SegmentsPage() {
               ? "作成中..."
               : `一括作成${bulkDbCount ? `(最大${bulkDbCount}件)` : ""}`}
           </button>
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <h2 className="text-sm font-semibold mb-1">作成済みの組み合わせ</h2>
+        <p className="text-xs text-gray-400 mb-3">
+          数字 = セグメント数(済 = 企業収集済みの数)。空欄のセルをクリックすると上の一括作成フォームにセットされます
+        </p>
+        <div className="overflow-x-auto">
+          <table className="text-sm border-collapse">
+            <thead>
+              <tr>
+                <th className="text-left px-3 py-2 text-xs text-gray-500 font-medium border-b border-gray-200 whitespace-nowrap">
+                  特化先DB ＼ ビジネスモデル
+                </th>
+                {businessModels.map((bm) => (
+                  <th
+                    key={bm.id}
+                    className="px-3 py-2 text-xs text-gray-500 font-medium border-b border-gray-200 whitespace-nowrap"
+                  >
+                    {bm.name}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {databases.map((db) => (
+                <tr key={db.id} className="border-b border-gray-100">
+                  <td className="px-3 py-2 text-gray-700 whitespace-nowrap font-medium">
+                    {db.name}
+                    <span className="text-xs text-gray-400 ml-1">
+                      ({db.industries?.[0]?.count ?? 0})
+                    </span>
+                  </td>
+                  {businessModels.map((bm) => {
+                    const cell = matrix.get(`${db.id}:${bm.id}`);
+                    return (
+                      <td key={bm.id} className="px-3 py-2 text-center">
+                        {cell ? (
+                          <span
+                            className={`inline-block min-w-12 text-xs px-2 py-1 rounded-lg ${
+                              cell.done === cell.count
+                                ? "bg-green-50 text-green-700"
+                                : cell.done > 0
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-blue-50 text-blue-700"
+                            }`}
+                            title={`セグメント${cell.count}件 / 企業収集済み${cell.done}件`}
+                          >
+                            {cell.count}
+                            {cell.done > 0 && ` (済${cell.done})`}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setBulkDbId(db.id);
+                              setBulkBmId(bm.id);
+                            }}
+                            className="text-gray-300 hover:text-gray-600 text-xs px-2 py-1"
+                            title={`${db.name} × ${bm.name} を一括作成フォームにセット`}
+                          >
+                            —
+                          </button>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
