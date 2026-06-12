@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { normalizeCompanyName, searchGbizByName } from "@/lib/gbizinfo";
+import {
+  normalizeCompanyName,
+  searchGbizByName,
+  searchGbizByNameFlexible,
+} from "@/lib/gbizinfo";
 
 export const maxDuration = 300;
 
@@ -73,11 +77,19 @@ export async function POST(req: Request) {
 
   for (const company of targets) {
     try {
-      const results = await searchGbizByName(company.name);
+      const results = await searchGbizByNameFlexible(company.name);
       const normalized = normalizeCompanyName(company.name);
-      // 正規化名の完全一致を優先。なければ候補が1件のときだけ採用(誤マッチ防止)
+      // 1. 正規化名の完全一致 → 2. 包含一致が1件だけ → 3. 候補が1件のみ、の順で採用
+      const exact = results.find(
+        (r) => normalizeCompanyName(r.name) === normalized
+      );
+      const containing = results.filter((r) => {
+        const rn = normalizeCompanyName(r.name);
+        return rn.includes(normalized) || normalized.includes(rn);
+      });
       const match =
-        results.find((r) => normalizeCompanyName(r.name) === normalized) ??
+        exact ??
+        (containing.length === 1 ? containing[0] : undefined) ??
         (results.length === 1 ? results[0] : undefined);
 
       if (!match) {
