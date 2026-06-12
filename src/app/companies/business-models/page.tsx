@@ -9,28 +9,11 @@ export default function BusinessModelsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [seeding, setSeeding] = useState(false);
 
   const load = useCallback(async () => {
     const data = await fetch("/api/business-models").then((r) => r.json());
     if (Array.isArray(data)) setModels(data);
   }, []);
-
-  async function seedOfficial() {
-    setSeeding(true);
-    setError("");
-    setMessage("");
-    const res = await fetch("/api/business-models/seed", { method: "POST" });
-    const data = await res.json();
-    setSeeding(false);
-    if (!res.ok) {
-      setError(data.error ?? "一括登録に失敗しました");
-      return;
-    }
-    setMessage(`${data.inserted}件を登録しました(既存スキップ: ${data.skipped}件)`);
-    load();
-  }
 
   useEffect(() => {
     load();
@@ -56,19 +39,9 @@ export default function BusinessModelsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">企業管理</h1>
-        <button
-          onClick={seedOfficial}
-          disabled={seeding}
-          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm disabled:opacity-40"
-        >
-          {seeding ? "登録中..." : "正式な10種に揃える"}
-        </button>
-      </div>
+      <h1 className="text-xl font-semibold">企業管理</h1>
       <CompaniesNav />
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {message && <p className="text-sm text-green-700">{message}</p>}
 
       <form
         onSubmit={add}
