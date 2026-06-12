@@ -80,7 +80,10 @@ export async function POST(req: Request) {
     if (rows.length > 0) {
       const { error } = await supabase.from("companies").insert(rows);
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        const message = /schema cache|does not exist/.test(error.message)
+          ? "companiesテーブルに新しい列がありません。マイグレーション 00006_company_research.sql をSupabaseのSQL Editorで実行してください(/setup で適用状況を確認できます)"
+          : error.message;
+        return NextResponse.json({ error: message }, { status: 500 });
       }
       inserted = rows.length;
     }
