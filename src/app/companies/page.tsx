@@ -70,10 +70,13 @@ export default function CompaniesPage() {
   }, [loadSegments]);
 
   // セグメントから既存の「特化先DB×ビジネスモデル」の組み合わせを導出
+  const selectedComboKey =
+    databaseId && businessModelId ? `${databaseId}:${businessModelId}` : "";
+
   const combos = (() => {
     const map = new Map<
       string,
-      { dbId: string; bmId: string; label: string; count: number }
+      { dbId: string; bmId: string; label: string; count: number; done: number }
     >();
     for (const seg of segments) {
       const dbId = seg.industries?.database_id;
@@ -83,17 +86,28 @@ export default function CompaniesPage() {
       const existing = map.get(key);
       if (existing) {
         existing.count++;
+        if (seg.research_done) existing.done++;
       } else {
         const dbName = seg.industries?.industry_databases?.name ?? "?";
         const bmName = seg.business_models?.name ?? "?";
-        map.set(key, { dbId, bmId, label: `${dbName} × ${bmName}`, count: 1 });
+        map.set(key, {
+          dbId,
+          bmId,
+          label: `${dbName} × ${bmName}`,
+          count: 1,
+          done: seg.research_done ? 1 : 0,
+        });
       }
     }
-    return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, "ja"));
+    return [...map.values()]
+      // 全セグメント取得完了の組み合わせは選択肢から外す(選択中のものは残す)
+      .filter(
+        (combo) =>
+          combo.done < combo.count ||
+          `${combo.dbId}:${combo.bmId}` === selectedComboKey
+      )
+      .sort((a, b) => a.label.localeCompare(b.label, "ja"));
   })();
-
-  const selectedComboKey =
-    databaseId && businessModelId ? `${databaseId}:${businessModelId}` : "";
 
   function selectCombo(key: string) {
     if (!key) {
@@ -250,7 +264,7 @@ export default function CompaniesPage() {
             <option value="">特化先DB × ビジネスモデルを選択</option>
             {combos.map((combo) => (
               <option key={`${combo.dbId}:${combo.bmId}`} value={`${combo.dbId}:${combo.bmId}`}>
-                {combo.label}({combo.count}セグメント)
+                {combo.label}(残り{combo.count - combo.done}/{combo.count}セグメント)
               </option>
             ))}
           </select>
