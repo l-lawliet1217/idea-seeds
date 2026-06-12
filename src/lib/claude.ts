@@ -419,7 +419,8 @@ export async function extractCompanyNames(
     .join("\n\n");
 
   const res = await getClient().messages.create({
-    model: "claude-haiku-4-5",
+    // 社名の切り出しは誤りの影響が大きいためSonnetを使用(1セグメント$0.005程度)
+    model: "claude-sonnet-4-6",
     max_tokens: 400,
     messages: [
       {
