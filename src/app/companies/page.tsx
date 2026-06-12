@@ -203,6 +203,7 @@ export default function CompaniesPage() {
         const parts = [
           `対象${data.targets}社中、${data.updated}社を更新`,
           `該当なし: ${data.not_found}件`,
+          `法人重複: ${data.duplicated ?? 0}件`,
           `失敗: ${data.failed}件`,
           `残り未処理: ${data.remaining}件`,
         ];
