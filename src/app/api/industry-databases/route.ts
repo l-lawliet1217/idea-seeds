@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  let query = getSupabaseAdmin()
-    .from("industries")
-    .select("*")
+export async function GET() {
+  const { data, error } = await getSupabaseAdmin()
+    .from("industry_databases")
+    .select("*, industries(count)")
     .order("created_at");
-  const databaseId = searchParams.get("database_id");
-  if (databaseId) query = query.eq("database_id", databaseId);
-  const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
 }
@@ -20,14 +16,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "name は必須です" }, { status: 400 });
   }
   const { data, error } = await getSupabaseAdmin()
-    .from("industries")
-    .insert({
-      name: body.name.trim(),
-      gbizinfo_code: body.gbizinfo_code || null,
-      jsic_code: body.jsic_code || null,
-      source_note: body.source_note || null,
-      database_id: body.database_id || null,
-    })
+    .from("industry_databases")
+    .insert({ name: body.name.trim(), source_note: body.source_note || null })
     .select()
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -38,12 +38,20 @@ export type BusinessModel = {
   description: string | null;
 };
 
+export type IndustryDatabase = {
+  id: string;
+  name: string;
+  source_note: string | null;
+  industries?: { count: number }[];
+};
+
 export type Industry = {
   id: string;
   name: string;
   gbizinfo_code: string | null;
   jsic_code: string | null;
   source_note: string | null;
+  database_id: string | null;
 };
 
 export type Segment = {
