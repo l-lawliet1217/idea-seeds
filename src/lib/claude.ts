@@ -347,9 +347,14 @@ export type ResearchedCompany = {
   phone: string | null;
 };
 
+export type ResearchOutcome = {
+  companies: ResearchedCompany[];
+  usage: Anthropic.Messages.Usage;
+};
+
 export async function researchCompanies(
   segmentName: string
-): Promise<ResearchedCompany[]> {
+): Promise<ResearchOutcome> {
   const res = await getClient().messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 4000,
@@ -396,7 +401,7 @@ export async function researchCompanies(
     try {
       const parsed = JSON.parse(matches[i]);
       if (Array.isArray(parsed)) {
-        return parsed
+        const companies = parsed
           .filter((row) => row && row.service_url)
           .map((row) => ({
             service_name: String(row.service_name ?? row.service_url),
@@ -410,6 +415,7 @@ export async function researchCompanies(
               : null,
             phone: row.phone ? String(row.phone) : null,
           }));
+        return { companies, usage: res.usage };
       }
     } catch {
       // 次の候補を試す
