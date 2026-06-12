@@ -73,6 +73,7 @@ export async function POST(req: Request) {
   let updated = 0;
   let notFound = 0;
   let failed = 0;
+  let duplicated = 0;
   let firstError: string | null = null;
 
   for (const company of targets) {
@@ -98,6 +99,25 @@ export async function POST(req: Request) {
           `enrich not_found: "${company.name}" candidates=${results.length}`
         );
       } else {
+        // 同じ法人番号の企業が既にいる場合は同一運営会社の重複行とみなしてスキップ
+        const { data: dup } = await supabase
+          .from("companies")
+          .select("id")
+          .eq("corporate_number", match.corporate_number)
+          .neq("id", company.id)
+          .limit(1);
+        if (dup && dup.length > 0) {
+          duplicated++;
+          await supabase
+            .from("companies")
+            .update({
+              note: `重複の可能性: 法人番号${match.corporate_number}は別の企業行に登録済み`,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", company.id);
+          continue;
+        }
+
         const update: Record<string, unknown> = {
           corporate_number: match.corporate_number,
           updated_at: new Date().toISOString(),
@@ -113,8 +133,12 @@ export async function POST(req: Request) {
           .update(update)
           .eq("id", company.id);
         if (updateError) {
-          failed++;
-          if (!firstError) firstError = updateError.message;
+          if (updateError.code === "23505") {
+            duplicated++;
+          } else {
+            failed++;
+            if (!firstError) firstError = updateError.message;
+          }
         } else updated++;
       }
     } catch (err) {
@@ -134,6 +158,7 @@ export async function POST(req: Request) {
     targets: targets.length,
     updated,
     not_found: notFound,
+    duplicated,
     failed,
     first_error: firstError,
     remaining: (companies ?? []).length - targets.length,
