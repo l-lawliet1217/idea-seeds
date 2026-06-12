@@ -14,7 +14,6 @@ const ENV_LABELS: { key: string; label: string; required: boolean }[] = [
   { key: "NEXT_PUBLIC_SUPABASE_ANON_KEY", label: "Supabase anonキー", required: true },
   { key: "SUPABASE_SERVICE_ROLE_KEY", label: "Supabase service_roleキー", required: true },
   { key: "ANTHROPIC_API_KEY", label: "Anthropic APIキー(スコアリング・生成)", required: true },
-  { key: "GBIZINFO_API_TOKEN", label: "gBizINFOトークン(企業取り込み)", required: false },
   { key: "SERPAPI_KEY", label: "SERP APIキー(順位取得)", required: false },
   { key: "CRON_SECRET", label: "Cronシークレット(順位取得)", required: false },
   { key: "WORDPRESS_URL", label: "WordPress URL(公開機能)", required: false },

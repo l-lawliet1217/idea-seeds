@@ -9,6 +9,11 @@ const MIGRATION_MARKERS: { file: string; table: string }[] = [
   { file: "00005_industry_databases.sql", table: "industry_databases" },
 ];
 
+// 列追加マイグレーションの確認(代表列をselectして判定)
+const COLUMN_MARKERS: { file: string; table: string; column: string }[] = [
+  { file: "00006_company_research.sql", table: "companies", column: "service_url" },
+];
+
 // セットアップ診断。秘密情報は返さず、設定の有無と接続状態のみ返す
 export async function GET() {
   const env = {
@@ -16,7 +21,6 @@ export async function GET() {
     NEXT_PUBLIC_SUPABASE_ANON_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
     ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
-    GBIZINFO_API_TOKEN: !!process.env.GBIZINFO_API_TOKEN,
     SERPAPI_KEY: !!process.env.SERPAPI_KEY,
     CRON_SECRET: !!process.env.CRON_SECRET,
     WORDPRESS_URL: !!process.env.WORDPRESS_URL,
@@ -51,18 +55,31 @@ export async function GET() {
       auth: { persistSession: false },
     });
     try {
-      const results = await Promise.all(
-        MIGRATION_MARKERS.map((m) =>
-          supabase.from(m.table).select("*", { head: true, count: "exact" })
-        )
-      );
+      const [tableResults, columnResults] = await Promise.all([
+        Promise.all(
+          MIGRATION_MARKERS.map((m) =>
+            supabase.from(m.table).select("*", { head: true, count: "exact" })
+          )
+        ),
+        Promise.all(
+          COLUMN_MARKERS.map((m) =>
+            supabase.from(m.table).select(m.column, { head: true, count: "exact" })
+          )
+        ),
+      ]);
       let reachable = true;
-      results.forEach((res, i) => {
+      tableResults.forEach((res, i) => {
         if (!res.error) return;
         if (res.error.code === "42P01" || /schema cache|does not exist/.test(res.error.message)) {
           pendingMigrations.push(MIGRATION_MARKERS[i].file);
         } else {
           reachable = false;
+        }
+      });
+      columnResults.forEach((res, i) => {
+        if (!res.error) return;
+        if (/column|does not exist|schema cache/.test(res.error.message)) {
+          pendingMigrations.push(COLUMN_MARKERS[i].file);
         }
       });
       if (!reachable) database = "error";

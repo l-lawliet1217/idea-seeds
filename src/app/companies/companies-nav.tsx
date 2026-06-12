@@ -20,7 +20,6 @@ export default function CompaniesNav() {
         const active =
           item.href === "/companies"
             ? pathname === "/companies" ||
-              pathname === "/companies/import" ||
               /^\/companies\/[0-9a-f-]{36}$/.test(pathname)
             : pathname.startsWith(item.href);
         return (

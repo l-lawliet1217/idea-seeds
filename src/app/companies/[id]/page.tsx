@@ -125,6 +125,33 @@ function OverviewTab({
   return (
     <div className="grid md:grid-cols-2 gap-5">
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 text-sm">
+        <Row label="サービス" value={company.service_name ?? "-"} />
+        <Row
+          label="サイトURL"
+          value={
+            company.service_url ? (
+              <a
+                href={company.service_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue-600 hover:underline"
+              >
+                {company.service_url}
+              </a>
+            ) : (
+              "-"
+            )
+          }
+        />
+        <Row
+          label="資本金"
+          value={
+            company.capital_jpy !== null
+              ? `${company.capital_jpy.toLocaleString()}円`
+              : "-"
+          }
+        />
+        <Row label="代表電話" value={company.phone ?? "-"} />
         <Row label="所在地" value={company.prefecture ?? "-"} />
         <Row
           label="売上高"

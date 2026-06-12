@@ -336,6 +336,88 @@ ${sourceText.slice(0, 8000)}
   };
 }
 
+// セグメント(例: 北海道特化型採用ポータル)に該当する実在のWebサービスを
+// Claudeのweb検索ツールで探す
+export type ResearchedCompany = {
+  service_name: string;
+  service_url: string;
+  company_name: string | null;
+  employees: number | null;
+  capital_jpy: number | null;
+  phone: string | null;
+};
+
+export async function researchCompanies(
+  segmentName: string
+): Promise<ResearchedCompany[]> {
+  const res = await getClient().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4000,
+    tools: [
+      {
+        type: "web_search_20250305",
+        name: "web_search",
+        max_uses: 8,
+      },
+    ] as unknown as Anthropic.Messages.ToolUnion[],
+    messages: [
+      {
+        role: "user",
+        content: `「${segmentName}」に該当する、実在する日本のWebサービス/サイトをweb検索で最大5件探してください。
+例: セグメントが「北海道特化型採用ポータル」なら、北海道に特化した採用・求人ポータルサイトを探す。
+
+各サイトについて以下を調べてください(運営会社の会社概要ページ等を確認):
+- サービス/サイト名
+- サイトURL
+- 運営会社名
+- 運営会社の社員数
+- 運営会社の資本金(円)
+- 代表電話番号
+
+ルール:
+- 実在が確認できたサイトのみ。捏造禁止
+- 確認できなかった項目は null
+- 大手総合サイト(リクナビ等の非特化型)は除外し、セグメントに本当に特化したものだけ
+
+最後に次のJSON配列のみを出力してください(コードブロック不要):
+[{"service_name": "...", "service_url": "https://...", "company_name": "...", "employees": 数値またはnull, "capital_jpy": 数値またはnull, "phone": "..."}]`,
+      },
+    ],
+  });
+
+  const text = res.content
+    .filter((block) => block.type === "text")
+    .map((block) => (block as { text: string }).text)
+    .join("\n");
+
+  // 最後に出力されたJSON配列を抽出(検索の途中経過テキストを避ける)
+  const matches = text.match(/\[[\s\S]*?\](?=[^\]]*$)|\[[\s\S]*\]/g) ?? [];
+  for (let i = matches.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(matches[i]);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((row) => row && row.service_url)
+          .map((row) => ({
+            service_name: String(row.service_name ?? row.service_url),
+            service_url: String(row.service_url),
+            company_name: row.company_name ? String(row.company_name) : null,
+            employees: Number.isFinite(Number(row.employees))
+              ? Number(row.employees)
+              : null,
+            capital_jpy: Number.isFinite(Number(row.capital_jpy))
+              ? Number(row.capital_jpy)
+              : null,
+            phone: row.phone ? String(row.phone) : null,
+          }));
+      }
+    } catch {
+      // 次の候補を試す
+    }
+  }
+  throw new Error("リサーチ結果のJSONを抽出できませんでした");
+}
+
 // アウトリーチ文を指示に従って書き直す
 export async function rewriteMessage(
   message: string,
