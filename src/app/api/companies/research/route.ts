@@ -146,8 +146,18 @@ export async function POST(req: Request) {
           serviceName = extractSiteTitle(html) ?? site.title;
           // トップページはフッター限定(本文中の取引先・掲載企業名を拾わない)
           evidence.push(...collectCompanyEvidence(html, "footer"));
-          // 会社概要・運営会社・特商法ページがあればそちらも読む
-          for (const link of findCompanyInfoLinks(html, site.url)) {
+          // 会社概要・運営会社・特商法ページがあればそちらも読む。
+          // リンクが見つからない場合(JS描画のフッター等)は定番パスを直接試す
+          let infoLinks = findCompanyInfoLinks(html, site.url);
+          if (infoLinks.length === 0) {
+            try {
+              const origin = new URL(site.url).origin;
+              infoLinks = [`${origin}/company`, `${origin}/about`, `${origin}/corporate`];
+            } catch {
+              infoLinks = [];
+            }
+          }
+          for (const link of infoLinks.slice(0, 3)) {
             const infoHtml = await fetchHtml(link);
             if (infoHtml) {
               evidence.push(...collectCompanyEvidence(infoHtml, "full"));

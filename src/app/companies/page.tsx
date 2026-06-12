@@ -118,8 +118,8 @@ export default function CompaniesPage() {
       setError("特化先DB × ビジネスモデルを選択してください");
       return;
     }
-    // 企業収集フラグが立っていないセグメントから順に、1回の実行で最大10セグメント調査
-    const queue = targetSegments.filter((seg) => !seg.research_done).slice(0, 10);
+    // 企業収集フラグが立っていないセグメントから順に、1回の実行で最大100セグメントを並列5で調査
+    const queue = targetSegments.filter((seg) => !seg.research_done).slice(0, 100);
     if (queue.length === 0) {
       setError(
         "未収集のセグメントがありません(全セグメント収集済み。再収集したい場合はセグメントタブの「企業収集」チェックを外してください)"
@@ -129,49 +129,52 @@ export default function CompaniesPage() {
 
     setResearching(true);
     setError("");
+    const CONCURRENCY = 5;
     let total = 0;
     let runCost = 0;
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let completed = 0;
+    let failures = 0;
+    let cursor = 0;
 
-    for (let i = 0; i < queue.length; i++) {
-      const seg = queue[i];
-      let done = false;
-      for (let attempt = 0; attempt < 3 && !done; attempt++) {
-        setProgress(
-          `(${i + 1}/${queue.length}) ${seg.name} を調査中... 累計コスト $${runCost.toFixed(3)}`
-        );
+    const updateProgress = () => {
+      setProgress(
+        `処理中 ${completed}/${queue.length}(並列${CONCURRENCY}) / 登録 ${total}社 / 累計コスト $${runCost.toFixed(3)}${failures > 0 ? ` / 失敗 ${failures}件` : ""}`
+      );
+    };
+    updateProgress();
+
+    const worker = async () => {
+      while (true) {
+        const i = cursor++;
+        if (i >= queue.length) return;
         try {
           const res = await fetch("/api/companies/research", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ segment_id: seg.id }),
+            body: JSON.stringify({ segment_id: queue[i].id }),
           });
           const data = await res.json();
           if (res.ok) {
             total += data.inserted ?? 0;
             runCost += data.cost_usd ?? 0;
-            done = true;
-          } else if (/レート制限/.test(data.error ?? "") && attempt < 2) {
-            // トークン上限(分単位)に当たった場合は待機して同じセグメントを再試行
-            for (let s = 60; s > 0; s -= 5) {
-              setProgress(
-                `(${i + 1}/${queue.length}) ${seg.name}: レート制限のため${s}秒待機中...(自動で再開します)`
-              );
-              await sleep(5000);
-            }
           } else {
+            failures++;
             setError(data.error ?? "一部のセグメントで失敗しました");
-            done = true;
           }
         } catch {
-          setError("通信エラーが発生しました");
-          done = true;
+          failures++;
         }
+        completed++;
+        updateProgress();
+        if (completed % 10 === 0) load();
       }
-      load();
-    }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker)
+    );
+
     setProgress(
-      `完了: ${queue.length}セグメントを調査し、${total}社を登録しました(今回のコスト: $${runCost.toFixed(3)})`
+      `完了: ${queue.length}セグメントを調査し、${total}社を登録しました(今回のコスト: $${runCost.toFixed(3)}${failures > 0 ? ` / 失敗 ${failures}件` : ""})`
     );
     setResearching(false);
     load();
@@ -255,7 +258,7 @@ export default function CompaniesPage() {
             disabled={researching || enriching}
             className="px-4 py-1.5 bg-gray-900 text-white rounded-lg disabled:opacity-40"
           >
-            {researching ? "調査中..." : "検索して登録(10セグメントずつ)"}
+            {researching ? "調査中..." : "検索して登録(100セグメントまで・並列5)"}
           </button>
           <button
             onClick={enrich}
