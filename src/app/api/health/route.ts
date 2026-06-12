@@ -13,6 +13,7 @@ const MIGRATION_MARKERS: { file: string; table: string }[] = [
 // 列追加マイグレーションの確認(代表列をselectして判定)
 const COLUMN_MARKERS: { file: string; table: string; column: string }[] = [
   { file: "00006_company_research.sql", table: "companies", column: "service_url" },
+  { file: "00008_segment_research_flag.sql", table: "segments", column: "research_done" },
 ];
 
 // セットアップ診断。秘密情報は返さず、設定の有無と接続状態のみ返す

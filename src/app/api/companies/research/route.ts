@@ -30,6 +30,12 @@ export async function POST(req: Request) {
       segment_id: segment.id,
       segment: segment.name,
     });
+    // 調査が完了したセグメントは収集済みフラグを立て、以降のリサーチから除外
+    await supabase
+      .from("segments")
+      .update({ research_done: true })
+      .eq("id", segment.id);
+
     const results = outcome.companies;
     if (results.length === 0) {
       return NextResponse.json({

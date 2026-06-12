@@ -58,11 +58,14 @@ export default function CompaniesPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    fetch("/api/segments")
-      .then((r) => r.json())
-      .then((data) => Array.isArray(data) && setSegments(data));
+  const loadSegments = useCallback(async () => {
+    const data = await fetch("/api/segments").then((r) => r.json());
+    if (Array.isArray(data)) setSegments(data);
   }, []);
+
+  useEffect(() => {
+    loadSegments();
+  }, [loadSegments]);
 
   // セグメントから既存の「特化先DB×ビジネスモデル」の組み合わせを導出
   const combos = (() => {
@@ -113,13 +116,12 @@ export default function CompaniesPage() {
       setError("特化先DB × ビジネスモデルを選択してください");
       return;
     }
-    // 企業が未登録のセグメントから順に、1回の実行で最大5セグメント調査
-    const coveredSegmentIds = new Set(companies.map((c) => c.segment_id));
-    const queue = targetSegments
-      .filter((seg) => !coveredSegmentIds.has(seg.id))
-      .slice(0, 5);
+    // 企業収集フラグが立っていないセグメントから順に、1回の実行で最大5セグメント調査
+    const queue = targetSegments.filter((seg) => !seg.research_done).slice(0, 5);
     if (queue.length === 0) {
-      setError("未調査のセグメントがありません(全セグメント調査済み)");
+      setError(
+        "未収集のセグメントがありません(全セグメント収集済み。再収集したい場合はセグメントタブの「企業収集」チェックを外してください)"
+      );
       return;
     }
 
@@ -172,6 +174,7 @@ export default function CompaniesPage() {
     setResearching(false);
     load();
     loadUsage();
+    loadSegments();
   }
 
   return (
