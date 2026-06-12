@@ -15,6 +15,29 @@ import {
 import { extractUsage, logApiUsage } from "@/lib/usage";
 import { normalizeCompanyName } from "@/lib/gbizinfo";
 
+// 文字コードを判定してデコードする(Shift_JIS/EUC-JPの古いサイト対策)
+function decodeHtml(buf: ArrayBuffer, contentType: string | null): string {
+  const bytes = new Uint8Array(buf);
+  let charset =
+    contentType?.match(/charset=["']?([\w\-]+)/i)?.[1]?.toLowerCase() ?? null;
+  if (!charset) {
+    // metaタグから判定(先頭4KBをASCII互換で読む)
+    const head = new TextDecoder("latin1").decode(bytes.slice(0, 4096));
+    charset =
+      head.match(/<meta[^>]+charset=["']?([\w\-]+)/i)?.[1]?.toLowerCase() ?? null;
+  }
+  const label = /^(shift[_\-]?jis|sjis|x-sjis|windows-31j|ms932)$/.test(charset ?? "")
+    ? "shift_jis"
+    : charset === "euc-jp"
+      ? "euc-jp"
+      : (charset ?? "utf-8");
+  try {
+    return new TextDecoder(label).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+}
+
 async function fetchHtml(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
@@ -23,7 +46,8 @@ async function fetchHtml(url: string): Promise<string | null> {
       cache: "no-store",
     });
     if (!res.ok) return null;
-    return await res.text();
+    const buf = await res.arrayBuffer();
+    return decodeHtml(buf, res.headers.get("content-type"));
   } catch {
     return null;
   }
