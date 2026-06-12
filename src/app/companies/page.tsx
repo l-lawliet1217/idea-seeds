@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import CompaniesNav from "./companies-nav";
 import {
   Company,
   CompanyStatus,
@@ -45,7 +46,7 @@ export default function CompaniesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">企業一覧</h1>
+        <h1 className="text-xl font-semibold">企業管理</h1>
         <div className="flex items-center gap-2">
           {scoreMessage && (
             <span className="text-xs text-gray-500">{scoreMessage}</span>
@@ -84,6 +85,7 @@ export default function CompaniesPage() {
           </Link>
         </div>
       </div>
+      <CompaniesNav />
 
       <div className="flex flex-wrap gap-3 items-center bg-white border border-gray-200 rounded-xl p-3 text-sm">
         <select
