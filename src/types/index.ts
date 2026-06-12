@@ -72,6 +72,10 @@ export type Company = {
   corporate_number: string | null;
   name: string;
   website_url: string | null;
+  service_name: string | null;
+  service_url: string | null;
+  capital_jpy: number | null;
+  phone: string | null;
   prefecture: string | null;
   revenue_jpy: number | null;
   employees: number | null;

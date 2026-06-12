@@ -37,7 +37,6 @@ SEOコンテンツ生成、テレアポ管理などを行う。設計書は docs
 - src/app/api/cron/serp/     SERP順位の定期取得(Vercel Cron)
 - src/lib/supabase.ts        ブラウザ用Supabaseクライアント(@supabase/ssr)
 - src/lib/supabase-server.ts サーバー用(service role)クライアント
-- src/lib/gbizinfo.ts        gBizINFO APIクライアント
 - src/lib/serp.ts            SERP取得(SerpAPI実装、差し替え可能)
 - src/lib/wordpress.ts       WordPress REST API
 - src/lib/claude.ts          スコアリング・キーワード生成・コンテンツ生成
@@ -48,7 +47,7 @@ SEOコンテンツ生成、テレアポ管理などを行う。設計書は docs
 
 READMEのセットアップ手順を参照。必須: ANTHROPIC_API_KEY / NEXT_PUBLIC_SUPABASE_URL /
 NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY。
-機能別: GBIZINFO_API_TOKEN / SERPAPI_KEY / CRON_SECRET / WORDPRESS_URL /
+機能別: SERPAPI_KEY / CRON_SECRET / WORDPRESS_URL /
 WORDPRESS_USER / WORDPRESS_APP_PASSWORD / ALLOWED_EMAIL_DOMAIN / EDINET_API_KEY(未使用)
 
 ## 実装ルール
