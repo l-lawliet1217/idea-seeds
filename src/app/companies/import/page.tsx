@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import CompaniesNav from "../companies-nav";
 import { ImportCandidate, Segment } from "@/types";
 
 export default function ImportPage() {
@@ -70,6 +71,7 @@ export default function ImportPage() {
   return (
     <div className="space-y-6 max-w-3xl">
       <h1 className="text-xl font-semibold">企業取り込み(gBizINFO)</h1>
+      <CompaniesNav />
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 text-sm">
         <div className="grid grid-cols-2 gap-3">

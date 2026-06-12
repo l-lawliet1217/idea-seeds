@@ -11,8 +11,6 @@ export const metadata: Metadata = {
 const NAV_ITEMS = [
   { href: "/", label: "ダッシュボード" },
   { href: "/companies", label: "企業" },
-  { href: "/companies/import", label: "取り込み" },
-  { href: "/segments", label: "セグメント" },
   { href: "/keywords", label: "キーワード" },
   { href: "/contents", label: "コンテンツ" },
   { href: "/calls", label: "テレアポ" },
