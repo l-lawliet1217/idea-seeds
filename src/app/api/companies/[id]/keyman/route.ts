@@ -5,7 +5,12 @@ import {
   KeymanEvidence,
   researchKeyman,
 } from "@/lib/claude";
-import { extractPhoneNumber, fetchHtml, fetchSerpResults } from "@/lib/serp";
+import {
+  extractPhoneNumber,
+  fetchHtml,
+  fetchSerpResults,
+  serpConfigError,
+} from "@/lib/serp";
 import { extractUsage, logApiUsage, logSerpUsage } from "@/lib/usage";
 
 export const maxDuration = 300;
@@ -32,15 +37,13 @@ export async function POST(_req: Request, { params }: Params) {
     );
   }
 
-  if (!process.env.SERPAPI_KEY) {
-    return NextResponse.json(
-      { error: "SERPAPI_KEY が設定されていません" },
-      { status: 503 }
-    );
+  const serpConfigErr = serpConfigError();
+  if (serpConfigErr) {
+    return NextResponse.json({ error: serpConfigErr }, { status: 503 });
   }
 
   try {
-    // SerpAPIで4系統の検索を実行し、タイトル+スニペットを証拠として集める
+    // SERP APIで4系統の検索を実行し、タイトル+スニペットを証拠として集める
     // (Claudeのweb検索より大幅に安い)。SerpAPIの同時実行数上限に当たらないよう
     // 1社内の4クエリは直列で叩く(UI側で複数社を並列実行するため)
     const queries = [

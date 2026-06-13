@@ -1,5 +1,6 @@
-// SERP取得クライアント。現状はSerpAPI(serpapi.com)実装。
-// 既存の自社SERP取得システムに差し替える場合はこの関数の中身だけ置き換える。
+// SERP取得クライアント。SerpAPI または DataforSEO に対応(環境変数で切り替え)。
+// SERP_PROVIDER=dataforseo でDataforSEO、未設定/serpapi でSerpAPIを使う。
+// 別のSERP取得システムに差し替える場合もこの関数群だけ置き換えればよい。
 
 export type SerpResultRow = {
   position: number;
@@ -8,7 +9,35 @@ export type SerpResultRow = {
   snippet: string | null;
 };
 
+// 現在のSERPプロバイダ("serpapi" | "dataforseo")。コスト集計の単価切り替えにも使う
+export function serpProvider(): "serpapi" | "dataforseo" {
+  return process.env.SERP_PROVIDER?.toLowerCase() === "dataforseo"
+    ? "dataforseo"
+    : "serpapi";
+}
+
+// 現在のプロバイダの認証情報が設定済みか。未設定ならその旨のメッセージを返す
+export function serpConfigError(): string | null {
+  if (serpProvider() === "dataforseo") {
+    return process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD
+      ? null
+      : "DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD が設定されていません";
+  }
+  return process.env.SERPAPI_KEY ? null : "SERPAPI_KEY が設定されていません";
+}
+
 export async function fetchSerpResults(
+  keyword: string,
+  depth: number,
+  device: string
+): Promise<SerpResultRow[]> {
+  return serpProvider() === "dataforseo"
+    ? fetchDataforSeoResults(keyword, depth, device)
+    : fetchSerpApiResults(keyword, depth, device);
+}
+
+// --- SerpAPI (serpapi.com) ---
+async function fetchSerpApiResults(
   keyword: string,
   depth: number,
   device: string
@@ -50,6 +79,70 @@ export async function fetchSerpResults(
       url: r.link!,
       title: r.title ?? null,
       snippet: r.snippet ?? null,
+    }));
+}
+
+// --- DataforSEO (dataforseo.com) Google Organic Live Advanced ---
+// 認証: Basic認証(login:password)。日本のGoogle(location_code=2392, language=ja)
+async function fetchDataforSeoResults(
+  keyword: string,
+  depth: number,
+  device: string
+): Promise<SerpResultRow[]> {
+  const login = process.env.DATAFORSEO_LOGIN;
+  const password = process.env.DATAFORSEO_PASSWORD;
+  if (!login || !password) {
+    throw new Error("DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD が設定されていません");
+  }
+  const auth = Buffer.from(`${login}:${password}`).toString("base64");
+
+  const res = await fetch(
+    "https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      body: JSON.stringify([
+        {
+          keyword,
+          language_code: "ja",
+          location_code: 2392, // Japan
+          device: device === "mobile" ? "mobile" : "desktop",
+          depth: Math.min(depth, 100),
+        },
+      ]),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`SERP APIエラー: ${res.status} ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  // 全体のstatusとタスク単位のstatusを確認(課金エラー等はここに出る)
+  const task = data?.tasks?.[0];
+  if (data?.status_code !== 20000 || !task || task.status_code !== 20000) {
+    const msg = task?.status_message ?? data?.status_message ?? "unknown error";
+    const code = task?.status_code ?? data?.status_code;
+    throw new Error(`SERP APIエラー: ${code} ${msg}`);
+  }
+  const items: {
+    type?: string;
+    rank_absolute?: number;
+    url?: string;
+    title?: string;
+    description?: string;
+  }[] = task.result?.[0]?.items ?? [];
+  return items
+    .filter((r) => r.type === "organic" && r.rank_absolute && r.url)
+    .slice(0, depth)
+    .map((r) => ({
+      position: r.rank_absolute!,
+      url: r.url!,
+      title: r.title ?? null,
+      snippet: r.description ?? null,
     }));
 }
 

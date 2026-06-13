@@ -26,6 +26,8 @@ export async function GET() {
     ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
     GBIZINFO_API_TOKEN: !!process.env.GBIZINFO_API_TOKEN,
     SERPAPI_KEY: !!process.env.SERPAPI_KEY,
+    DATAFORSEO_LOGIN: !!process.env.DATAFORSEO_LOGIN,
+    DATAFORSEO_PASSWORD: !!process.env.DATAFORSEO_PASSWORD,
     CRON_SECRET: !!process.env.CRON_SECRET,
     WORDPRESS_URL: !!process.env.WORDPRESS_URL,
     WORDPRESS_USER: !!process.env.WORDPRESS_USER,

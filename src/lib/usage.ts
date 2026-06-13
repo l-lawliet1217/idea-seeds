@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { serpProvider } from "@/lib/serp";
 
 // 単価(USD)。出典: platform.claude.com/docs (2026-06時点)
 // claude-sonnet-4-6: 入力$3/M、出力$15/M
@@ -44,24 +45,31 @@ export function estimateCostUsd(model: string, u: UsageRecord): number {
   return tokensCost + u.web_searches * WEB_SEARCH_COST_PER_REQUEST;
 }
 
-// SerpAPIの1検索あたり概算単価(USD)。プランにより異なるため環境変数で上書き可能。
-// 既定$0.015(SerpAPIの一般的な有料プラン: $75/5,000検索相当)
-const SERP_COST_PER_SEARCH = Number(process.env.SERPAPI_COST_PER_SEARCH) || 0.015;
+// SERP検索1回あたりの概算単価(USD)。プロバイダ・プランで異なるため環境変数で上書き可能。
+// 既定: SerpAPI $0.015($75/5,000検索相当)、DataforSEO $0.002(Live Advanced相当)
+function serpCostPerSearch(): number {
+  const override = Number(process.env.SERP_COST_PER_SEARCH);
+  if (override > 0) return override;
+  // 後方互換: 旧変数名 SERPAPI_COST_PER_SEARCH も参照
+  const legacy = Number(process.env.SERPAPI_COST_PER_SEARCH);
+  if (legacy > 0) return legacy;
+  return serpProvider() === "dataforseo" ? 0.002 : 0.015;
+}
 
-// SerpAPIの検索回数・概算コストを記録し、コスト(USD)を返す。
-// Claudeのトークン課金とは別系統なので model="serpapi" の行として記録する
+// SERP検索の回数・概算コストを記録し、コスト(USD)を返す。
+// Claudeのトークン課金とは別系統なので model=プロバイダ名 の行として記録する
 // (検索回数は web_searches 列を流用。Claudeのweb検索ツールは現在未使用)
 export async function logSerpUsage(
   kind: string,
   searches: number,
   meta?: Record<string, unknown>
 ): Promise<number> {
-  const cost = searches * SERP_COST_PER_SEARCH;
   if (searches <= 0) return 0;
+  const cost = searches * serpCostPerSearch();
   try {
     await getSupabaseAdmin().from("api_usage_logs").insert({
       kind,
-      model: "serpapi",
+      model: serpProvider(),
       web_searches: searches,
       estimated_cost_usd: cost,
       meta: meta ?? null,

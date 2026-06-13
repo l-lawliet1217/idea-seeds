@@ -34,8 +34,8 @@ export async function GET() {
     const cost = Number(row.estimated_cost_usd) || 0;
     monthUsd += cost;
     if (row.created_at >= dayStart) todayUsd += cost;
-    // SerpAPI分(model="serpapi")は検索回数・金額を別集計
-    if (row.model === "serpapi") {
+    // SERP分(model=プロバイダ名)は検索回数・金額を別集計
+    if (row.model === "serpapi" || row.model === "dataforseo") {
       monthSerpSearches += row.web_searches ?? 0;
       monthSerpUsd += cost;
     }
