@@ -31,6 +31,8 @@ export default function CompaniesPage() {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [monthUsd, setMonthUsd] = useState<number | null>(null);
+  const [serpSearches, setSerpSearches] = useState<number | null>(null);
+  const [serpUsd, setSerpUsd] = useState<number | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [enrichMessage, setEnrichMessage] = useState("");
   const [keymanRunning, setKeymanRunning] = useState(false);
@@ -39,6 +41,9 @@ export default function CompaniesPage() {
   const loadUsage = useCallback(async () => {
     const data = await fetch("/api/usage").then((r) => r.json()).catch(() => null);
     if (data && typeof data.month_usd === "number") setMonthUsd(data.month_usd);
+    if (data && typeof data.month_serp_searches === "number")
+      setSerpSearches(data.month_serp_searches);
+    if (data && typeof data.month_serp_usd === "number") setSerpUsd(data.month_serp_usd);
   }, []);
 
   useEffect(() => {
@@ -318,6 +323,12 @@ export default function CompaniesPage() {
           {monthUsd !== null && (
             <span className="text-xs text-gray-400">
               今月のAI利用額: ${monthUsd.toFixed(2)}
+              {serpSearches !== null && (
+                <>
+                  {" / SERP API: "}
+                  {serpSearches.toLocaleString()}回 ${(serpUsd ?? 0).toFixed(2)}
+                </>
+              )}
             </span>
           )}
         </div>

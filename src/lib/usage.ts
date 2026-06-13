@@ -44,6 +44,34 @@ export function estimateCostUsd(model: string, u: UsageRecord): number {
   return tokensCost + u.web_searches * WEB_SEARCH_COST_PER_REQUEST;
 }
 
+// SerpAPIの1検索あたり概算単価(USD)。プランにより異なるため環境変数で上書き可能。
+// 既定$0.015(SerpAPIの一般的な有料プラン: $75/5,000検索相当)
+const SERP_COST_PER_SEARCH = Number(process.env.SERPAPI_COST_PER_SEARCH) || 0.015;
+
+// SerpAPIの検索回数・概算コストを記録し、コスト(USD)を返す。
+// Claudeのトークン課金とは別系統なので model="serpapi" の行として記録する
+// (検索回数は web_searches 列を流用。Claudeのweb検索ツールは現在未使用)
+export async function logSerpUsage(
+  kind: string,
+  searches: number,
+  meta?: Record<string, unknown>
+): Promise<number> {
+  const cost = searches * SERP_COST_PER_SEARCH;
+  if (searches <= 0) return 0;
+  try {
+    await getSupabaseAdmin().from("api_usage_logs").insert({
+      kind,
+      model: "serpapi",
+      web_searches: searches,
+      estimated_cost_usd: cost,
+      meta: meta ?? null,
+    });
+  } catch {
+    // テーブル未作成(マイグレーション00007未適用)でも本処理は継続
+  }
+  return cost;
+}
+
 // 利用量をDBに記録し、概算コスト(USD)を返す。記録失敗は呼び出し元の処理を妨げない
 export async function logApiUsage(
   kind: string,

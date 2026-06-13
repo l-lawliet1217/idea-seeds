@@ -14,7 +14,7 @@ import {
   fetchSerpResults,
   findCompanyInfoLinks,
 } from "@/lib/serp";
-import { extractUsage, logApiUsage } from "@/lib/usage";
+import { extractUsage, logApiUsage, logSerpUsage } from "@/lib/usage";
 import { normalizeCompanyName } from "@/lib/gbizinfo";
 
 export const maxDuration = 120;
@@ -54,6 +54,11 @@ export async function POST(req: Request) {
     // セグメント名の「/」などを除去して自然な検索クエリにする
     const query = segment.name.replace(/\s*\/\s*/g, " ").replace(/\s+/g, " ").trim();
     const serp = await fetchSerpResults(query, 10, "desktop");
+    // SerpAPI検索1回分のコストを記録(0件でも1検索消費している)
+    let costUsd = await logSerpUsage("research_fast", 1, {
+      segment_id: segment.id,
+      segment: segment.name,
+    });
     if (serp.length === 0) {
       await supabase
         .from("segments")
@@ -63,7 +68,7 @@ export async function POST(req: Request) {
         segment: segment.name,
         found: 0,
         inserted: 0,
-        cost_usd: 0,
+        cost_usd: costUsd,
       });
     }
 
@@ -87,13 +92,12 @@ export async function POST(req: Request) {
 
     // 2. 該当しそうなサイトをHaikuで選別(数百トークンの軽い呼び出し)
     let picked = candidates;
-    let costUsd = 0;
     if (candidates.length > 0) {
       const judged = await judgeSiteRelevance(
         segment.name,
         candidates.map((c) => ({ title: c.title, url: c.url }))
       );
-      costUsd = await logApiUsage(
+      costUsd += await logApiUsage(
         "research_fast",
         "claude-haiku-4-5",
         extractUsage(judged.usage),

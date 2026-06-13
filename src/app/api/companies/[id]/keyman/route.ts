@@ -6,7 +6,7 @@ import {
   researchKeyman,
 } from "@/lib/claude";
 import { extractPhoneNumber, fetchHtml, fetchSerpResults } from "@/lib/serp";
-import { extractUsage, logApiUsage } from "@/lib/usage";
+import { extractUsage, logApiUsage, logSerpUsage } from "@/lib/usage";
 
 export const maxDuration = 300;
 
@@ -51,9 +51,11 @@ export async function POST(_req: Request, { params }: Params) {
     ];
     const evidence: KeymanEvidence[] = [];
     const errors: string[] = [];
+    let serpSearches = 0; // 実際に消費した検索回数(エラー時は課金されないため数えない)
     for (const query of queries) {
       try {
         const results = await fetchSerpResults(query, 5, "desktop");
+        serpSearches++;
         for (const r of results) {
           evidence.push({ query, title: r.title, url: r.url, snippet: r.snippet });
         }
@@ -61,6 +63,11 @@ export async function POST(_req: Request, { params }: Params) {
         errors.push(e instanceof Error ? e.message : String(e));
       }
     }
+    // 消費したSerpAPI検索回数・概算コストを記録
+    const serpCost = await logSerpUsage("keyman", serpSearches, {
+      company_id: id,
+      company: company.name,
+    });
 
     // 全クエリがSerpAPIエラーで失敗した場合は「調査済み」にせず原因を返す。
     // (空配列で握りつぶすと0件で完了扱いになり、再実行もできなくなるため)
@@ -81,7 +88,8 @@ export async function POST(_req: Request, { params }: Params) {
         contacts_inserted: 0,
         relations_inserted: 0,
         skipped_no_source: 0,
-        cost_usd: 0,
+        cost_usd: serpCost,
+        serp_searches: serpSearches,
       });
     }
 
@@ -90,12 +98,13 @@ export async function POST(_req: Request, { params }: Params) {
       serviceName: company.service_name,
       evidence,
     });
-    const costUsd = await logApiUsage(
+    const claudeCost = await logApiUsage(
       "keyman",
       "claude-sonnet-4-6",
       extractUsage(result.usage),
-      { company_id: id, company: company.name, serp_searches: queries.length }
+      { company_id: id, company: company.name }
     );
+    const costUsd = claudeCost + serpCost;
 
     // 既存の担当者・関連会社と重複させない
     const [{ data: existingContacts }, { data: existingRelations }] =
@@ -204,6 +213,7 @@ export async function POST(_req: Request, { params }: Params) {
       relations_inserted: relationsInserted,
       skipped_no_source: skippedNoSource,
       cost_usd: costUsd,
+      serp_searches: serpSearches,
     });
   } catch (err) {
     return NextResponse.json({ error: friendlyClaudeError(err) }, { status: 500 });
