@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import {
+  getGbizCompanyDetail,
   normalizeCompanyName,
   searchGbizByName,
   searchGbizByNameFlexible,
@@ -36,8 +37,9 @@ export async function POST(req: Request) {
 
   let query = supabase
     .from("companies")
-    .select("id, name")
-    .is("corporate_number", null)
+    .select("id, name, corporate_number")
+    // 法人番号が未取得、または法人番号はあるが属性(従業員数・資本金)が未取得の企業
+    .or("corporate_number.is.null,and(employees.is.null,capital_jpy.is.null)")
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -74,31 +76,38 @@ export async function POST(req: Request) {
   let notFound = 0;
   let failed = 0;
   let duplicated = 0;
+  let noData = 0;
   let firstError: string | null = null;
 
   for (const company of targets) {
     try {
-      const results = await searchGbizByNameFlexible(company.name);
-      const normalized = normalizeCompanyName(company.name);
-      // 1. 正規化名の完全一致 → 2. 包含一致が1件だけ → 3. 候補が1件のみ、の順で採用
-      const exact = results.find(
-        (r) => normalizeCompanyName(r.name) === normalized
-      );
-      const containing = results.filter((r) => {
-        const rn = normalizeCompanyName(r.name);
-        return rn.includes(normalized) || normalized.includes(rn);
-      });
-      const match =
-        exact ??
-        (containing.length === 1 ? containing[0] : undefined) ??
-        (results.length === 1 ? results[0] : undefined);
-
-      if (!match) {
-        notFound++;
-        console.log(
-          `enrich not_found: "${company.name}" candidates=${results.length}`
+      // 法人番号を特定する(既に持っていれば名前検索は省略)
+      let corporateNumber = company.corporate_number as string | null;
+      if (!corporateNumber) {
+        const results = await searchGbizByNameFlexible(company.name);
+        const normalized = normalizeCompanyName(company.name);
+        // 1. 正規化名の完全一致 → 2. 包含一致が1件だけ → 3. 候補が1件のみ、の順で採用
+        const exact = results.find(
+          (r) => normalizeCompanyName(r.name) === normalized
         );
-      } else {
+        const containing = results.filter((r) => {
+          const rn = normalizeCompanyName(r.name);
+          return rn.includes(normalized) || normalized.includes(rn);
+        });
+        const match =
+          exact ??
+          (containing.length === 1 ? containing[0] : undefined) ??
+          (results.length === 1 ? results[0] : undefined);
+
+        if (!match) {
+          notFound++;
+          console.log(
+            `enrich not_found: "${company.name}" candidates=${results.length}`
+          );
+          await sleep(700);
+          continue;
+        }
+
         // 同じ法人番号の企業が既にいる場合は同一運営会社の重複行とみなしてスキップ
         const { data: dup } = await supabase
           .from("companies")
@@ -115,32 +124,42 @@ export async function POST(req: Request) {
               updated_at: new Date().toISOString(),
             })
             .eq("id", company.id);
+          await sleep(700);
           continue;
         }
-
-        const update: Record<string, unknown> = {
-          corporate_number: match.corporate_number,
-          updated_at: new Date().toISOString(),
-        };
-        if (match.employee_number !== null) update.employees = match.employee_number;
-        if (match.capital_stock !== null) update.capital_jpy = match.capital_stock;
-        if (match.location) {
-          const m = match.location.match(/^(.{2,3}?[都道府県])/);
-          if (m) update.prefecture = m[1];
-        }
-        const { error: updateError } = await supabase
-          .from("companies")
-          .update(update)
-          .eq("id", company.id);
-        if (updateError) {
-          if (updateError.code === "23505") {
-            duplicated++;
-          } else {
-            failed++;
-            if (!firstError) firstError = updateError.message;
-          }
-        } else updated++;
+        corporateNumber = match.corporate_number;
       }
+
+      // 従業員数・資本金は一覧検索に含まれないため、詳細APIで取得する
+      const detail = await getGbizCompanyDetail(corporateNumber);
+
+      const update: Record<string, unknown> = {
+        corporate_number: corporateNumber,
+        updated_at: new Date().toISOString(),
+      };
+      if (detail?.employee_number != null) update.employees = detail.employee_number;
+      if (detail?.capital_stock != null) update.capital_jpy = detail.capital_stock;
+      if (detail?.location) {
+        const m = detail.location.match(/^(.{2,3}?[都道府県])/);
+        if (m) update.prefecture = m[1];
+      }
+      if (detail?.employee_number == null && detail?.capital_stock == null) {
+        // gBizINFOに属性データが未収録の企業(届出がない中小企業など)
+        noData++;
+      }
+
+      const { error: updateError } = await supabase
+        .from("companies")
+        .update(update)
+        .eq("id", company.id);
+      if (updateError) {
+        if (updateError.code === "23505") {
+          duplicated++;
+        } else {
+          failed++;
+          if (!firstError) firstError = updateError.message;
+        }
+      } else updated++;
     } catch (err) {
       // トークン未設定はそのままユーザーに見せる
       if (err instanceof Error && /GBIZINFO_API_TOKEN/.test(err.message)) {
@@ -159,6 +178,7 @@ export async function POST(req: Request) {
     updated,
     not_found: notFound,
     duplicated,
+    no_data: noData,
     failed,
     first_error: firstError,
     remaining: (companies ?? []).length - targets.length,

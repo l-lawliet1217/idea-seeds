@@ -18,26 +18,9 @@ function toNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export async function searchGbizByName(name: string): Promise<GbizCompany[]> {
-  const token = process.env.GBIZINFO_API_TOKEN;
-  if (!token) {
-    throw new Error(
-      "GBIZINFO_API_TOKEN が設定されていません。https://info.gbiz.go.jp/hojin/api_registration/form で無料トークンを申請し、Vercelの環境変数に設定してください"
-    );
-  }
-  const query = new URLSearchParams({ name, limit: "10" });
-  const res = await fetch(`${BASE_URL}?${query.toString()}`, {
-    headers: { "X-hojinInfo-api-token": token },
-    cache: "no-store",
-    signal: AbortSignal.timeout(15000),
-  });
-  // gBizINFOは検索結果0件のとき404を返す仕様
-  if (res.status === 404) return [];
-  if (!res.ok) {
-    throw new Error(`gBizINFO APIエラー: ${res.status}`);
-  }
-  const data = await res.json();
-  const rows: Record<string, unknown>[] = data["hojin-infos"] ?? [];
+function parseGbizRows(data: unknown): GbizCompany[] {
+  const rows: Record<string, unknown>[] =
+    (data as { "hojin-infos"?: Record<string, unknown>[] })["hojin-infos"] ?? [];
   return rows
     .filter((r) => r.corporate_number && r.name)
     .map((r) => ({
@@ -47,6 +30,48 @@ export async function searchGbizByName(name: string): Promise<GbizCompany[]> {
       employee_number: toNumber(r.employee_number),
       capital_stock: toNumber(r.capital_stock),
     }));
+}
+
+function gbizHeaders(): Record<string, string> {
+  const token = process.env.GBIZINFO_API_TOKEN;
+  if (!token) {
+    throw new Error(
+      "GBIZINFO_API_TOKEN が設定されていません。https://info.gbiz.go.jp/hojin/api_registration/form で無料トークンを申請し、Vercelの環境変数に設定してください"
+    );
+  }
+  return { "X-hojinInfo-api-token": token };
+}
+
+export async function searchGbizByName(name: string): Promise<GbizCompany[]> {
+  const query = new URLSearchParams({ name, limit: "10" });
+  const res = await fetch(`${BASE_URL}?${query.toString()}`, {
+    headers: gbizHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+  // gBizINFOは検索結果0件のとき404を返す仕様
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    throw new Error(`gBizINFO APIエラー: ${res.status}`);
+  }
+  return parseGbizRows(await res.json());
+}
+
+// 法人番号指定の詳細取得。従業員数・資本金は一覧検索には含まれないため、
+// 必ずこちらで取得する
+export async function getGbizCompanyDetail(
+  corporateNumber: string
+): Promise<GbizCompany | null> {
+  const res = await fetch(`${BASE_URL}/${corporateNumber}`, {
+    headers: gbizHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`gBizINFO APIエラー: ${res.status}`);
+  }
+  return parseGbizRows(await res.json())[0] ?? null;
 }
 
 // 半角英数字を全角に変換(法人登記名は「アクシスITパートナーズ」のように全角英字が多い)
