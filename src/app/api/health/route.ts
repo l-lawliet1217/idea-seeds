@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { serpConfigError, serpProvider } from "@/lib/serp";
 
 // マイグレーションごとの代表テーブル(存在チェックで適用状況を判定)
 const MIGRATION_MARKERS: { file: string; table: string }[] = [
@@ -96,5 +97,17 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({ env, auth, database, pending_migrations: pendingMigrations });
+  // 現在のSERPプロバイダと、その認証情報が揃っているか
+  const serp = {
+    provider: serpProvider(),
+    configured: !serpConfigError(),
+  };
+
+  return NextResponse.json({
+    env,
+    auth,
+    database,
+    pending_migrations: pendingMigrations,
+    serp,
+  });
 }
