@@ -465,7 +465,132 @@ ${blocks}
   return { names, usage: res.usage };
 }
 
-// アウトリーチ文を指示に従って書き直す
+// キーマン(経営陣・マーケ担当)と支援ベンダー・投資家をweb検索で調査する
+// 参考: company-research(複数LLMクロスチェック)。本実装はClaude+web検索1本のため、
+// 「出典URLが確認できた情報のみ・推測禁止」で品質を担保する
+export type KeymanPerson = {
+  name: string;
+  department: string | null;
+  position: string | null;
+  phone: string | null;
+  source: string | null;
+};
+export type KeymanVendor = {
+  name: string;
+  category: string | null;
+  usage: string | null;
+  website: string | null;
+  source: string | null;
+};
+export type KeymanInvestor = {
+  name: string;
+  round: string | null;
+  date: string | null;
+  source: string | null;
+};
+export type KeymanResearch = {
+  executives: KeymanPerson[];
+  marketing: KeymanPerson[];
+  vendors: KeymanVendor[];
+  investors: KeymanInvestor[];
+  main_phone: string | null;
+  usage: Anthropic.Messages.Usage;
+};
+
+export async function researchKeyman(input: {
+  companyName: string;
+  serviceName: string | null;
+  serviceUrl: string | null;
+}): Promise<KeymanResearch> {
+  const res = await getClient().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 3000,
+    tools: [
+      {
+        type: "web_search_20250305",
+        name: "web_search",
+        max_uses: 6,
+      },
+    ] as unknown as Anthropic.Messages.ToolUnion[],
+    messages: [
+      {
+        role: "user",
+        content: `「${input.companyName}」${input.serviceName ? `(運営サービス: ${input.serviceName}${input.serviceUrl ? ` / ${input.serviceUrl}` : ""})` : ""} について、web検索で以下を調査してください。
+
+1. 経営陣: 代表取締役・取締役・執行役員の氏名と役職
+2. マーケティング責任者・担当者: 氏名・部署・役職(プレスリリース・登壇情報・インタビュー記事などから)
+3. 支援ベンダー: 広告代理店・Web制作会社・SEO会社・開発会社など、この会社を支援している外部パートナー企業(導入事例・実績ページ・プレスリリースから)
+4. 投資家・株主: VC・事業会社など(調達プレスリリースから。ラウンドと時期も)
+5. 代表電話番号
+
+厳守するルール:
+- 検索結果で出典URLが確認できた情報のみ。推測・捏造は禁止
+- 各項目に source(出典URL)を必ず付ける。出典が示せない情報は含めない
+- vertexaisearch.cloud.google.com 等の中間リダイレクトURLは出典にしない
+- 見つからないカテゴリは空配列でよい(無理に埋めない)
+- 検索は最大6回。古い情報しかない場合はそのまま載せてよい(出典の日付で判断できるため)
+
+最後に次のJSONのみを出力(コードブロック不要):
+{"executives": [{"name": "...", "department": null, "position": "代表取締役", "phone": null, "source": "https://..."}],
+ "marketing": [{"name": "...", "department": "マーケティング部", "position": "部長", "phone": null, "source": "https://..."}],
+ "vendors": [{"name": "株式会社...", "category": "広告代理店", "usage": "リスティング運用", "website": "https://...", "source": "https://..."}],
+ "investors": [{"name": "...", "round": "シリーズA", "date": "2024-06", "source": "https://..."}],
+ "main_phone": "03-xxxx-xxxx または null"}`,
+      },
+    ],
+  });
+
+  const text = res.content
+    .filter((b) => b.type === "text")
+    .map((b) => (b as { text: string }).text)
+    .join("\n");
+  const matches = text.match(/\{[\s\S]*\}/g) ?? [];
+  for (let i = matches.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(matches[i]);
+      if (parsed && typeof parsed === "object" && "executives" in parsed) {
+        const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+        const str = (v: unknown) => (v ? String(v) : null);
+        const person = (row: Record<string, unknown>): KeymanPerson | null =>
+          row?.name
+            ? {
+                name: String(row.name),
+                department: str(row.department),
+                position: str(row.position),
+                phone: str(row.phone),
+                source: str(row.source),
+              }
+            : null;
+        return {
+          executives: arr(parsed.executives).map(person).filter((p): p is KeymanPerson => !!p),
+          marketing: arr(parsed.marketing).map(person).filter((p): p is KeymanPerson => !!p),
+          vendors: arr(parsed.vendors)
+            .filter((row: Record<string, unknown>) => row?.name)
+            .map((row: Record<string, unknown>) => ({
+              name: String(row.name),
+              category: str(row.category),
+              usage: str(row.usage),
+              website: str(row.website),
+              source: str(row.source),
+            })),
+          investors: arr(parsed.investors)
+            .filter((row: Record<string, unknown>) => row?.name)
+            .map((row: Record<string, unknown>) => ({
+              name: String(row.name),
+              round: str(row.round),
+              date: str(row.date),
+              source: str(row.source),
+            })),
+          main_phone: str(parsed.main_phone),
+          usage: res.usage,
+        };
+      }
+    } catch {
+      // 次の候補を試す
+    }
+  }
+  throw new Error("キーマン調査結果のJSONを抽出できませんでした");
+}
 export async function rewriteMessage(
   message: string,
   instruction: string

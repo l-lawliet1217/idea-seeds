@@ -14,6 +14,7 @@ const MIGRATION_MARKERS: { file: string; table: string }[] = [
 const COLUMN_MARKERS: { file: string; table: string; column: string }[] = [
   { file: "00006_company_research.sql", table: "companies", column: "service_url" },
   { file: "00008_segment_research_flag.sql", table: "segments", column: "research_done" },
+  { file: "00009_keyman.sql", table: "companies", column: "keyman_research_done" },
 ];
 
 // セットアップ診断。秘密情報は返さず、設定の有無と接続状態のみ返す
