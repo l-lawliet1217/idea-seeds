@@ -459,24 +459,41 @@ function RelationsTab({
           <thead className="bg-gray-50 text-gray-500 text-xs">
             <tr>
               <th className="text-left px-4 py-2 font-medium">会社名</th>
-              <th className="text-left px-4 py-2 font-medium">種別</th>
+              <th className="text-left px-4 py-2 font-medium">区分</th>
+              <th className="text-left px-4 py-2 font-medium">提供サービス・支援内容</th>
               <th className="text-left px-4 py-2 font-medium">電話番号</th>
             </tr>
           </thead>
           <tbody>
             {company.company_relations.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-gray-400">
+                <td colSpan={4} className="px-4 py-6 text-center text-gray-400">
                   ベンダー・投資家が未登録です
                 </td>
               </tr>
             )}
             {company.company_relations.map((r) => (
               <tr key={r.id} className="border-t border-gray-100">
-                <td className="px-4 py-2">{r.related_name}</td>
-                <td className="px-4 py-2 text-gray-500">
-                  {RELATION_TYPE_LABELS[r.relation_type]}
+                <td className="px-4 py-2">
+                  {r.website_url ? (
+                    <a
+                      href={r.website_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      {r.related_name}
+                    </a>
+                  ) : (
+                    r.related_name
+                  )}
                 </td>
+                <td className="px-4 py-2 text-gray-500">
+                  {r.category
+                    ? `${RELATION_TYPE_LABELS[r.relation_type]}・${r.category}`
+                    : RELATION_TYPE_LABELS[r.relation_type]}
+                </td>
+                <td className="px-4 py-2 text-gray-500">{r.detail ?? "-"}</td>
                 <td className="px-4 py-2 text-gray-500">{r.phone ?? "-"}</td>
               </tr>
             ))}

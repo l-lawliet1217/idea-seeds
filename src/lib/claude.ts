@@ -528,7 +528,7 @@ export async function researchKeyman(input: {
 
 1. 経営陣: 代表取締役・取締役・執行役員の氏名と役職
 2. マーケティング責任者・担当者: 氏名・部署・役職
-3. 支援ベンダー: 広告代理店・Web制作・SEO・開発会社など、この会社を支援している外部パートナー企業(「導入事例」「支援実績」の文脈)
+3. 支援ベンダー: 広告代理店・Web制作・SEO・開発会社など、この会社を支援している外部パートナー企業(「導入事例」「支援実績」の文脈)。category にはベンダーの業種(例:広告代理店、SEOコンサル、システム開発)、usage にはこの会社に提供している具体的なサービス内容(例:リスティング広告運用、コーポレートサイト制作、基幹システム開発)をできるだけ具体的に記載する
 4. 投資家・株主: VC・事業会社(ラウンド・時期も)
 5. 代表電話番号
 
@@ -544,7 +544,7 @@ ${evidenceBlock}
 次のJSONのみを出力(コードブロック不要):
 {"executives": [{"name": "...", "department": null, "position": "代表取締役", "phone": null, "source": "https://..."}],
  "marketing": [{"name": "...", "department": "...", "position": "...", "phone": null, "source": "https://..."}],
- "vendors": [{"name": "株式会社...", "category": "広告代理店", "usage": "...", "website": null, "source": "https://..."}],
+ "vendors": [{"name": "株式会社...", "category": "広告代理店", "usage": "リスティング広告運用代行", "website": null, "source": "https://..."}],
  "investors": [{"name": "...", "round": "シリーズA", "date": "2024-06", "source": "https://..."}],
  "main_phone": "03-xxxx-xxxx または null"}`,
       },
