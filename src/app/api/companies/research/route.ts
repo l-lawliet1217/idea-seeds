@@ -8,57 +8,14 @@ import {
 import {
   collectCompanyEvidence,
   extractDomain,
+  extractPhoneNumber,
   extractSiteTitle,
+  fetchHtml,
   fetchSerpResults,
   findCompanyInfoLinks,
 } from "@/lib/serp";
 import { extractUsage, logApiUsage } from "@/lib/usage";
 import { normalizeCompanyName } from "@/lib/gbizinfo";
-
-// 文字コードを判定してデコードする(Shift_JIS/EUC-JPの古いサイト対策)
-function decodeHtml(buf: ArrayBuffer, contentType: string | null): string {
-  const bytes = new Uint8Array(buf);
-  let charset =
-    contentType?.match(/charset=["']?([\w\-]+)/i)?.[1]?.toLowerCase() ?? null;
-  if (!charset) {
-    // metaタグから判定(先頭4KBをASCII互換で読む)
-    const head = new TextDecoder("latin1").decode(bytes.slice(0, 4096));
-    charset =
-      head.match(/<meta[^>]+charset=["']?([\w\-]+)/i)?.[1]?.toLowerCase() ?? null;
-  }
-  const label = /^(shift[_\-]?jis|sjis|x-sjis|windows-31j|ms932)$/.test(charset ?? "")
-    ? "shift_jis"
-    : charset === "euc-jp"
-      ? "euc-jp"
-      : (charset ?? "utf-8");
-  try {
-    return new TextDecoder(label).decode(bytes);
-  } catch {
-    return new TextDecoder("utf-8").decode(bytes);
-  }
-}
-
-async function fetchHtml(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url, {
-      // ボット風UAはWAFに弾かれるため、ブラウザ同等のヘッダーで取得する
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ja,en-US;q=0.8",
-      },
-      signal: AbortSignal.timeout(10000),
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    const buf = await res.arrayBuffer();
-    return decodeHtml(buf, res.headers.get("content-type"));
-  } catch {
-    return null;
-  }
-}
 
 export const maxDuration = 120;
 
@@ -149,10 +106,13 @@ export async function POST(req: Request) {
     const siteData = await Promise.all(
       picked.map(async (site, index) => {
         let serviceName = site.title;
+        let phone: string | null = null;
         const evidence: string[] = [];
         const html = await fetchHtml(site.url);
         if (html) {
           serviceName = extractSiteTitle(html) ?? site.title;
+          // トップページのheader/footerから代表電話を抽出
+          phone = extractPhoneNumber(html);
           // トップページはフッター限定(本文中の取引先・掲載企業名を拾わない)
           evidence.push(...collectCompanyEvidence(html, "footer"));
           // 会社概要・運営会社・特商法ページがあればそちらも読む。
@@ -170,10 +130,12 @@ export async function POST(req: Request) {
             const infoHtml = await fetchHtml(link);
             if (infoHtml) {
               evidence.push(...collectCompanyEvidence(infoHtml, "full"));
+              // 代表電話は会社概要ページにあることが多い(未取得なら補完)
+              if (!phone) phone = extractPhoneNumber(infoHtml);
             }
           }
         }
-        return { index, url: site.url, service_name: serviceName, evidence };
+        return { index, url: site.url, service_name: serviceName, phone, evidence };
       })
     );
 
@@ -217,6 +179,7 @@ export async function POST(req: Request) {
         service_name: site.service_name,
         service_url: site.url,
         website_url: site.url,
+        phone: site.phone,
         status: "candidate",
         source: "serp_research",
         source_url: site.url,
