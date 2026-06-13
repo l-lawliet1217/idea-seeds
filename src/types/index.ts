@@ -112,6 +112,9 @@ export type CompanyRelation = {
   company_id: string;
   related_name: string;
   relation_type: RelationType;
+  category: string | null;
+  detail: string | null;
+  website_url: string | null;
   phone: string | null;
   source_url: string | null;
   note: string | null;
