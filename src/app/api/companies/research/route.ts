@@ -13,6 +13,7 @@ import {
   fetchHtml,
   fetchSerpResults,
   findCompanyInfoLinks,
+  serpConfigError,
 } from "@/lib/serp";
 import { extractUsage, logApiUsage, logSerpUsage } from "@/lib/usage";
 import { normalizeCompanyName } from "@/lib/gbizinfo";
@@ -39,14 +40,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "セグメントが見つかりません" }, { status: 404 });
   }
 
-  if (!process.env.SERPAPI_KEY) {
-    return NextResponse.json(
-      {
-        error:
-          "SERPAPI_KEY が設定されていません。https://serpapi.com/ でキーを取得し(無料枠あり)、Vercelの環境変数に設定してください",
-      },
-      { status: 503 }
-    );
+  const serpConfigErr = serpConfigError();
+  if (serpConfigErr) {
+    return NextResponse.json({ error: serpConfigErr }, { status: 503 });
   }
 
   try {
