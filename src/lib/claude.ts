@@ -497,43 +497,54 @@ export type KeymanResearch = {
   usage: Anthropic.Messages.Usage;
 };
 
+export type KeymanEvidence = {
+  query: string;
+  title: string | null;
+  url: string;
+  snippet: string | null;
+};
+
+// SerpAPIの検索結果(タイトル+スニペット)を証拠として渡し、Sonnet1回で抽出する。
+// Claudeのweb検索ツールより大幅に安い(検索結果全文をコンテキストに積まないため)
 export async function researchKeyman(input: {
   companyName: string;
   serviceName: string | null;
-  serviceUrl: string | null;
+  evidence: KeymanEvidence[];
 }): Promise<KeymanResearch> {
+  const evidenceBlock = input.evidence
+    .map(
+      (e, i) =>
+        `[${i}] (検索:${e.query}) ${e.title ?? ""}\n  URL: ${e.url}\n  ${e.snippet ?? ""}`
+    )
+    .join("\n");
+
   const res = await getClient().messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 3000,
-    tools: [
-      {
-        type: "web_search_20250305",
-        name: "web_search",
-        max_uses: 6,
-      },
-    ] as unknown as Anthropic.Messages.ToolUnion[],
+    max_tokens: 2500,
     messages: [
       {
         role: "user",
-        content: `「${input.companyName}」${input.serviceName ? `(運営サービス: ${input.serviceName}${input.serviceUrl ? ` / ${input.serviceUrl}` : ""})` : ""} について、web検索で以下を調査してください。
+        content: `「${input.companyName}」${input.serviceName ? `(運営サービス: ${input.serviceName})` : ""} に関するGoogle検索結果(タイトルとスニペット)から、以下を抽出してください。
 
 1. 経営陣: 代表取締役・取締役・執行役員の氏名と役職
-2. マーケティング責任者・担当者: 氏名・部署・役職(プレスリリース・登壇情報・インタビュー記事などから)
-3. 支援ベンダー: 広告代理店・Web制作会社・SEO会社・開発会社など、この会社を支援している外部パートナー企業(導入事例・実績ページ・プレスリリースから)
-4. 投資家・株主: VC・事業会社など(調達プレスリリースから。ラウンドと時期も)
+2. マーケティング責任者・担当者: 氏名・部署・役職
+3. 支援ベンダー: 広告代理店・Web制作・SEO・開発会社など、この会社を支援している外部パートナー企業(「導入事例」「支援実績」の文脈)
+4. 投資家・株主: VC・事業会社(ラウンド・時期も)
 5. 代表電話番号
 
 厳守するルール:
-- 検索結果で出典URLが確認できた情報のみ。推測・捏造は禁止
-- 各項目に source(出典URL)を必ず付ける。出典が示せない情報は含めない
-- vertexaisearch.cloud.google.com 等の中間リダイレクトURLは出典にしない
-- 見つからないカテゴリは空配列でよい(無理に埋めない)
-- 検索は最大6回。古い情報しかない場合はそのまま載せてよい(出典の日付で判断できるため)
+- スニペットまたはタイトルに明記されている情報のみ。推測・補完は禁止
+- 各項目の source には、その情報が書かれていた検索結果のURL([i]のURL)をそのまま使う
+- 同名の別会社の情報を混ぜない(社名が完全に一致するものだけ)
+- 見つからないカテゴリは空配列でよい
 
-最後に次のJSONのみを出力(コードブロック不要):
+検索結果:
+${evidenceBlock}
+
+次のJSONのみを出力(コードブロック不要):
 {"executives": [{"name": "...", "department": null, "position": "代表取締役", "phone": null, "source": "https://..."}],
- "marketing": [{"name": "...", "department": "マーケティング部", "position": "部長", "phone": null, "source": "https://..."}],
- "vendors": [{"name": "株式会社...", "category": "広告代理店", "usage": "リスティング運用", "website": "https://...", "source": "https://..."}],
+ "marketing": [{"name": "...", "department": "...", "position": "...", "phone": null, "source": "https://..."}],
+ "vendors": [{"name": "株式会社...", "category": "広告代理店", "usage": "...", "website": null, "source": "https://..."}],
  "investors": [{"name": "...", "round": "シリーズA", "date": "2024-06", "source": "https://..."}],
  "main_phone": "03-xxxx-xxxx または null"}`,
       },

@@ -5,6 +5,7 @@ export type SerpResultRow = {
   position: number;
   url: string;
   title: string | null;
+  snippet: string | null;
 };
 
 export async function fetchSerpResults(
@@ -35,8 +36,12 @@ export async function fetchSerpResults(
   }
 
   const data = await res.json();
-  const organic: { position?: number; link?: string; title?: string }[] =
-    data.organic_results ?? [];
+  const organic: {
+    position?: number;
+    link?: string;
+    title?: string;
+    snippet?: string;
+  }[] = data.organic_results ?? [];
   return organic
     .filter((r) => r.position && r.link)
     .slice(0, depth)
@@ -44,6 +49,7 @@ export async function fetchSerpResults(
       position: r.position!,
       url: r.link!,
       title: r.title ?? null,
+      snippet: r.snippet ?? null,
     }));
 }
 

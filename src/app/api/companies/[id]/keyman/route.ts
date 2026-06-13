@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { friendlyClaudeError, researchKeyman } from "@/lib/claude";
+import {
+  friendlyClaudeError,
+  KeymanEvidence,
+  researchKeyman,
+} from "@/lib/claude";
+import { fetchSerpResults } from "@/lib/serp";
 import { extractUsage, logApiUsage } from "@/lib/usage";
 
 export const maxDuration = 300;
@@ -27,17 +32,62 @@ export async function POST(_req: Request, { params }: Params) {
     );
   }
 
+  if (!process.env.SERPAPI_KEY) {
+    return NextResponse.json(
+      { error: "SERPAPI_KEY が設定されていません" },
+      { status: 503 }
+    );
+  }
+
   try {
+    // SerpAPIで4系統の検索を並列実行し、タイトル+スニペットを証拠として集める
+    // (Claudeのweb検索より大幅に安く、速い)
+    const queries = [
+      `${company.name} 代表取締役 役員`,
+      `${company.name} 資金調達 出資`,
+      `${company.name} 導入事例 支援`,
+      `${company.name} マーケティング 担当 インタビュー`,
+    ];
+    const evidence: KeymanEvidence[] = [];
+    const searchResults = await Promise.all(
+      queries.map(async (query) => {
+        try {
+          return { query, results: await fetchSerpResults(query, 5, "desktop") };
+        } catch {
+          return { query, results: [] };
+        }
+      })
+    );
+    for (const { query, results } of searchResults) {
+      for (const r of results) {
+        evidence.push({ query, title: r.title, url: r.url, snippet: r.snippet });
+      }
+    }
+
+    if (evidence.length === 0) {
+      await supabase
+        .from("companies")
+        .update({ keyman_research_done: true, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      return NextResponse.json({
+        company: company.name,
+        contacts_inserted: 0,
+        relations_inserted: 0,
+        skipped_no_source: 0,
+        cost_usd: 0,
+      });
+    }
+
     const result = await researchKeyman({
       companyName: company.name,
       serviceName: company.service_name,
-      serviceUrl: company.service_url,
+      evidence,
     });
     const costUsd = await logApiUsage(
       "keyman",
       "claude-sonnet-4-6",
       extractUsage(result.usage),
-      { company_id: id, company: company.name }
+      { company_id: id, company: company.name, serp_searches: queries.length }
     );
 
     // 既存の担当者・関連会社と重複させない
