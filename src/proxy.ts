@@ -1,13 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = [
-  "/login",
-  "/auth/callback",
-  "/setup",
-  "/api/health",
-  "/api/serp-test",
-];
+const PUBLIC_PATHS = ["/login", "/auth/callback", "/setup", "/api/health"];
 
 export async function proxy(req: NextRequest) {
   // ローカル開発でSupabase Auth未設定でも動かすための退避フラグ
