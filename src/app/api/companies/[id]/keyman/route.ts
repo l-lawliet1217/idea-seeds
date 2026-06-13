@@ -40,8 +40,9 @@ export async function POST(_req: Request, { params }: Params) {
   }
 
   try {
-    // SerpAPIで4系統の検索を並列実行し、タイトル+スニペットを証拠として集める
-    // (Claudeのweb検索より大幅に安く、速い)
+    // SerpAPIで4系統の検索を実行し、タイトル+スニペットを証拠として集める
+    // (Claudeのweb検索より大幅に安い)。SerpAPIの同時実行数上限に当たらないよう
+    // 1社内の4クエリは直列で叩く(UI側で複数社を並列実行するため)
     const queries = [
       `${company.name} 代表取締役 役員`,
       `${company.name} 資金調達 出資`,
@@ -49,19 +50,25 @@ export async function POST(_req: Request, { params }: Params) {
       `${company.name} マーケティング 担当 インタビュー`,
     ];
     const evidence: KeymanEvidence[] = [];
-    const searchResults = await Promise.all(
-      queries.map(async (query) => {
-        try {
-          return { query, results: await fetchSerpResults(query, 5, "desktop") };
-        } catch {
-          return { query, results: [] };
+    const errors: string[] = [];
+    for (const query of queries) {
+      try {
+        const results = await fetchSerpResults(query, 5, "desktop");
+        for (const r of results) {
+          evidence.push({ query, title: r.title, url: r.url, snippet: r.snippet });
         }
-      })
-    );
-    for (const { query, results } of searchResults) {
-      for (const r of results) {
-        evidence.push({ query, title: r.title, url: r.url, snippet: r.snippet });
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : String(e));
       }
+    }
+
+    // 全クエリがSerpAPIエラーで失敗した場合は「調査済み」にせず原因を返す。
+    // (空配列で握りつぶすと0件で完了扱いになり、再実行もできなくなるため)
+    if (evidence.length === 0 && errors.length === queries.length) {
+      return NextResponse.json(
+        { error: `SERP API検索に失敗しました(${errors[0]})` },
+        { status: 502 }
+      );
     }
 
     if (evidence.length === 0) {
