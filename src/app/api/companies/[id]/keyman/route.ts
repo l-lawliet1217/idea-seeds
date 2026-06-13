@@ -5,7 +5,7 @@ import {
   KeymanEvidence,
   researchKeyman,
 } from "@/lib/claude";
-import { fetchSerpResults } from "@/lib/serp";
+import { extractPhoneNumber, fetchHtml, fetchSerpResults } from "@/lib/serp";
 import { extractUsage, logApiUsage } from "@/lib/usage";
 
 export const maxDuration = 300;
@@ -19,7 +19,7 @@ export async function POST(_req: Request, { params }: Params) {
 
   const { data: company, error } = await supabase
     .from("companies")
-    .select("id, name, service_name, service_url, phone")
+    .select("id, name, service_name, service_url, website_url, phone")
     .eq("id", id)
     .single();
   if (error || !company) {
@@ -173,13 +173,21 @@ export async function POST(_req: Request, { params }: Params) {
       if (!relationError) relationsInserted = relationRows.length;
     }
 
-    // 代表電話が未登録なら反映し、調査済みフラグを立てる
+    // 代表電話が未登録なら補完。サイト本体(header/footer)からの直接抽出を最優先し、
+    // 取れなければ検索スニペット由来(result.main_phone)で補う
     const companyUpdate: Record<string, unknown> = {
       keyman_research_done: true,
       updated_at: new Date().toISOString(),
     };
-    if (!company.phone && result.main_phone) {
-      companyUpdate.phone = result.main_phone;
+    if (!company.phone) {
+      let phone: string | null = null;
+      const pageUrl = company.service_url ?? company.website_url;
+      if (pageUrl) {
+        const html = await fetchHtml(pageUrl);
+        if (html) phone = extractPhoneNumber(html);
+      }
+      phone = phone ?? result.main_phone;
+      if (phone) companyUpdate.phone = phone;
     }
     await supabase.from("companies").update(companyUpdate).eq("id", id);
 

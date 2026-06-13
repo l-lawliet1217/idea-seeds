@@ -61,6 +61,51 @@ export function extractDomain(url: string): string | null {
   }
 }
 
+// 文字コードを判定してデコードする(Shift_JIS/EUC-JPの古いサイト対策)
+function decodeHtml(buf: ArrayBuffer, contentType: string | null): string {
+  const bytes = new Uint8Array(buf);
+  let charset =
+    contentType?.match(/charset=["']?([\w\-]+)/i)?.[1]?.toLowerCase() ?? null;
+  if (!charset) {
+    // metaタグから判定(先頭4KBをASCII互換で読む)
+    const head = new TextDecoder("latin1").decode(bytes.slice(0, 4096));
+    charset =
+      head.match(/<meta[^>]+charset=["']?([\w\-]+)/i)?.[1]?.toLowerCase() ?? null;
+  }
+  const label = /^(shift[_\-]?jis|sjis|x-sjis|windows-31j|ms932)$/.test(charset ?? "")
+    ? "shift_jis"
+    : charset === "euc-jp"
+      ? "euc-jp"
+      : (charset ?? "utf-8");
+  try {
+    return new TextDecoder(label).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+}
+
+// ページHTMLを取得する。ボット風UAはWAFに弾かれるためブラウザ同等のヘッダーを使う
+export async function fetchHtml(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ja,en-US;q=0.8",
+      },
+      signal: AbortSignal.timeout(10000),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    return decodeHtml(buf, res.headers.get("content-type"));
+  } catch {
+    return null;
+  }
+}
+
 function htmlToText(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -150,4 +195,77 @@ export function extractSiteTitle(html: string): string | null {
   const title = m[1].replace(/\s+/g, " ").trim();
   const head = title.split(/[|｜\-–—«»<>【]/)[0].trim();
   return (head || title).slice(0, 60) || null;
+}
+
+// 全角数字・各種ハイフン・括弧を半角へ寄せる(電話番号抽出の前処理)
+function normalizePhoneChars(s: string): string {
+  return s
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[‐‑‒–—―ー−ｰ－]/g, "-")
+    .replace(/[（]/g, "(")
+    .replace(/[）]/g, ")");
+}
+
+// 数字10〜11桁(先頭0)の電話番号らしさを検証し、整形して返す
+function cleanJpPhone(raw: string): string | null {
+  let digits = raw.replace(/[^\d+]/g, "");
+  digits = digits.replace(/^\+?81/, "0").replace(/\D/g, "");
+  if (!/^0\d{9,10}$/.test(digits)) return null;
+  // 区切りが分からないので元の表記(ハイフンのみ残す)を優先、整合しなければ数字のみ
+  const formatted = raw
+    .replace(/[^\d-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return formatted.replace(/\D/g, "") === digits ? formatted : digits;
+}
+
+// ページHTMLから代表電話番号を抽出する。
+// 優先順: tel:リンク > header/footer内のTEL表記 > その他の電話番号表記。
+// FAX番号や本文中の無関係な番号を拾わないよう、文脈とエリアでスコアリングする。
+export function extractPhoneNumber(html: string): string | null {
+  const norm = normalizePhoneChars(html);
+
+  // 1. tel:リンクが最も信頼できる(複数あれば最頻出を採用)
+  const telCounts = new Map<string, number>();
+  for (const m of norm.matchAll(/href=["']tel:([+\d() \-]+)["']/gi)) {
+    const phone = cleanJpPhone(m[1]);
+    if (phone) telCounts.set(phone, (telCounts.get(phone) ?? 0) + 1);
+  }
+  if (telCounts.size > 0) {
+    return [...telCounts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
+
+  // 2. テキスト中の電話番号を文脈・エリアでスコアリング
+  const headerText = (norm.match(/<header[\s\S]*?<\/header>/gi) ?? [])
+    .join(" ")
+    .replace(/<[^>]+>/g, " ");
+  const footerText = (norm.match(/<footer[\s\S]*?<\/footer>/gi) ?? [])
+    .join(" ")
+    .replace(/<[^>]+>/g, " ");
+  const text = norm.replace(/<[^>]+>/g, " ");
+
+  // 固定電話・携帯・フリーダイヤル(区切りありを必須にして誤検出を抑える)
+  const phoneRe =
+    /0\d{1,4}[-(]\d{1,4}[-) ]\d{3,4}|0(?:120|800)-?\d{2,4}-?\d{2,4}/g;
+  let bestPhone: string | null = null;
+  let bestScore = -Infinity;
+  for (const m of text.matchAll(phoneRe)) {
+    const raw = m[0];
+    const phone = cleanJpPhone(raw);
+    if (!phone) continue;
+    const idx = m.index ?? 0;
+    const ctx = text.slice(Math.max(0, idx - 24), idx + raw.length + 4);
+    let score = 0;
+    if (/FAX|ＦＡＸ/i.test(ctx)) score -= 8;
+    if (/TEL|電話|お問い?合わせ|フリーダイヤル|受付|ご相談|代表/i.test(ctx)) score += 4;
+    if (headerText.includes(raw)) score += 3;
+    if (footerText.includes(raw)) score += 2;
+    if (/^0(?:120|800)/.test(phone)) score += 1; // フリーダイヤルは代表番号の可能性が高い
+    if (score > bestScore) {
+      bestScore = score;
+      bestPhone = phone;
+    }
+  }
+  // FAXしか見つからない等、スコアが負なら採用しない
+  return bestScore >= 0 ? bestPhone : null;
 }
