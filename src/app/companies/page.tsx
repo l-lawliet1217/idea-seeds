@@ -33,6 +33,8 @@ export default function CompaniesPage() {
   const [monthUsd, setMonthUsd] = useState<number | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [enrichMessage, setEnrichMessage] = useState("");
+  const [keymanRunning, setKeymanRunning] = useState(false);
+  const [keymanMessage, setKeymanMessage] = useState("");
 
   const loadUsage = useCallback(async () => {
     const data = await fetch("/api/usage").then((r) => r.json()).catch(() => null);
@@ -239,6 +241,69 @@ export default function CompaniesPage() {
     setEnriching(false);
   }
 
+  async function keymanResearch() {
+    // 表示中の絞り込み範囲のうち、社名があり未調査の企業を最大20社・並列3で処理
+    const targets = companies
+      .filter((c) => c.name && !c.keyman_research_done && !c.do_not_contact)
+      .slice(0, 20);
+    if (targets.length === 0) {
+      setKeymanMessage(
+        "対象企業がありません(社名取得済み・未調査の企業が対象です)"
+      );
+      return;
+    }
+    setKeymanRunning(true);
+    setError("");
+    const CONCURRENCY = 3;
+    let completed = 0;
+    let contactsTotal = 0;
+    let relationsTotal = 0;
+    let runCost = 0;
+    let failures = 0;
+    let cursor = 0;
+
+    const update = () =>
+      setKeymanMessage(
+        `キーマン調査中 ${completed}/${targets.length}(並列${CONCURRENCY}) / 担当者 ${contactsTotal}名・パートナー ${relationsTotal}社 / 累計コスト $${runCost.toFixed(3)}${failures > 0 ? ` / 失敗 ${failures}件` : ""}`
+      );
+    update();
+
+    const worker = async () => {
+      while (true) {
+        const i = cursor++;
+        if (i >= targets.length) return;
+        try {
+          const res = await fetch(`/api/companies/${targets[i].id}/keyman`, {
+            method: "POST",
+          });
+          const data = await res.json();
+          if (res.ok) {
+            contactsTotal += data.contacts_inserted ?? 0;
+            relationsTotal += data.relations_inserted ?? 0;
+            runCost += data.cost_usd ?? 0;
+          } else {
+            failures++;
+            setError(data.error ?? "一部の企業で失敗しました");
+          }
+        } catch {
+          failures++;
+        }
+        completed++;
+        update();
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker)
+    );
+
+    setKeymanMessage(
+      `キーマン調査完了: ${targets.length}社 / 担当者 ${contactsTotal}名・パートナー ${relationsTotal}社を登録(コスト $${runCost.toFixed(3)}${failures > 0 ? ` / 失敗 ${failures}件` : ""})`
+    );
+    setKeymanRunning(false);
+    load();
+    loadUsage();
+  }
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">企業管理</h1>
@@ -278,14 +343,22 @@ export default function CompaniesPage() {
           </button>
           <button
             onClick={enrich}
-            disabled={researching || enriching}
+            disabled={researching || enriching || keymanRunning}
             className="px-4 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40"
           >
             {enriching ? "取得中..." : "法人番号・従業員数・資本金を取得(無料)"}
           </button>
+          <button
+            onClick={keymanResearch}
+            disabled={researching || enriching || keymanRunning}
+            className="px-4 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40"
+          >
+            {keymanRunning ? "調査中..." : "キーマン・ベンダーを取得(20社ずつ)"}
+          </button>
         </div>
         {progress && <p className="text-xs text-gray-500">{progress}</p>}
         {enrichMessage && <p className="text-xs text-gray-500">{enrichMessage}</p>}
+        {keymanMessage && <p className="text-xs text-gray-500">{keymanMessage}</p>}
         <p className="text-xs text-gray-400">
           Google検索の上位5件から該当サイトを選別し、サイトのフッターから運営会社名を抽出して登録します(1セグメント数秒・AIはサイト選別のみで$0.001以下)。法人番号・従業員数・資本金は右のボタンでgBizINFO(経産省・無料)から補完します(一度に30社ずつ)
         </p>

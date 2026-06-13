@@ -82,6 +82,7 @@ export type Company = {
   employees: number | null;
   budget_score: number | null;
   budget_score_reason: string | null;
+  keyman_research_done?: boolean;
   status: CompanyStatus;
   do_not_contact: boolean;
   source: string | null;
