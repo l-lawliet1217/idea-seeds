@@ -89,8 +89,8 @@ async function fetchDataforSeoResults(
   depth: number,
   device: string
 ): Promise<SerpResultRow[]> {
-  const login = process.env.DATAFORSEO_LOGIN;
-  const password = process.env.DATAFORSEO_PASSWORD;
+  const login = process.env.DATAFORSEO_LOGIN?.trim();
+  const password = process.env.DATAFORSEO_PASSWORD?.trim();
   if (!login || !password) {
     throw new Error("DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD が設定されていません");
   }
