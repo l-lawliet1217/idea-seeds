@@ -90,7 +90,21 @@ function CallItemCard({
   const company = item.companies;
   if (!company) return null;
   const contacts: Contact[] = company.contacts ?? [];
-  const callable = contacts.filter((c) => c.phone && !c.do_not_contact);
+  // 担当者個人の電話が無ければ会社の代表電話で架電できるようにする(拒否企業は代表電話も使わない)
+  const repPhone = company.do_not_contact ? null : company.phone;
+  const callable: { id: string | null; name: string; phone: string; isRep: boolean }[] = contacts
+    .filter((c) => !c.do_not_contact)
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone || repPhone || "",
+      isRep: !c.phone && !!repPhone,
+    }))
+    .filter((c) => c.phone);
+  // 架電可能な担当者がいない場合でも、代表電話があれば代表宛に架電できるようにする
+  if (callable.length === 0 && repPhone) {
+    callable.push({ id: null, name: "代表", phone: repPhone, isRep: true });
+  }
 
   async function logCall(contactId: string | null) {
     setBusy(true);
@@ -140,12 +154,12 @@ function CallItemCard({
         <div className="ml-auto flex items-center gap-2">
           {callable.map((c) => (
             <a
-              key={c.id}
+              key={c.id ?? `rep-${c.phone}`}
               // Zoom Phoneデスクトップアプリのclick-to-call
               href={`zoomphonecall://${c.phone}`}
               className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs"
             >
-              {c.name}に架電 ({c.phone})
+              {c.name}に架電 ({c.phone}{c.isRep ? " / 代表電話" : ""})
             </a>
           ))}
           {callable.length === 0 && (
