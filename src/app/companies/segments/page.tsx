@@ -160,31 +160,31 @@ export default function SegmentsPage() {
             <thead>
               <tr>
                 <th className="text-left px-3 py-2 text-xs text-gray-500 font-medium border-b border-gray-200 whitespace-nowrap">
-                  特化先DB ＼ ビジネスモデル
+                  ビジネスモデル ＼ 特化先DB
                 </th>
-                {businessModels.map((bm) => (
+                {databases.map((db) => (
                   <th
-                    key={bm.id}
+                    key={db.id}
                     className="px-3 py-2 text-xs text-gray-500 font-medium border-b border-gray-200 whitespace-nowrap"
                   >
-                    {bm.name}
+                    {db.name}
+                    <span className="text-gray-400 ml-1">
+                      ({db.industries?.[0]?.count ?? 0})
+                    </span>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {databases.map((db) => (
-                <tr key={db.id} className="border-b border-gray-100">
+              {businessModels.map((bm) => (
+                <tr key={bm.id} className="border-b border-gray-100">
                   <td className="px-3 py-2 text-gray-700 whitespace-nowrap font-medium">
-                    {db.name}
-                    <span className="text-xs text-gray-400 ml-1">
-                      ({db.industries?.[0]?.count ?? 0})
-                    </span>
+                    {bm.name}
                   </td>
-                  {businessModels.map((bm) => {
+                  {databases.map((db) => {
                     const cell = matrix.get(`${db.id}:${bm.id}`);
                     return (
-                      <td key={bm.id} className="px-3 py-2 text-center">
+                      <td key={db.id} className="px-3 py-2 text-center">
                         {cell ? (
                           <span
                             className={`inline-block min-w-12 text-xs px-2 py-1 rounded-lg ${
