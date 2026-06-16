@@ -10,7 +10,8 @@ export async function GET(req: Request) {
       const query = getSupabaseAdmin()
         .from("industries")
         .select("*")
-        .order("created_at");
+        .order("created_at")
+        .order("id");
       return databaseId ? query.eq("database_id", databaseId) : query;
     });
     return NextResponse.json(data);

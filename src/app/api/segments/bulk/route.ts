@@ -23,7 +23,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "ビジネスモデルが見つかりません" }, { status: 404 });
   }
 
-  // SELECTは既定で最大1000行のため、特化先項目・既存セグメントは全件ページングで取得する
+  // SELECTは既定で最大1000行のため、特化先項目・既存セグメントは全件ページングで取得する。
+  // ページ境界で行が重複・欠落しないよう、必ずユニーク列(id)で安定ソートする
+  // (created_atが同一の大量行をオフセットページングすると順序が不定になり重複取得される)
   let items: { id: string; name: string }[];
   let existing: { industry_id: string }[];
   try {
@@ -32,13 +34,14 @@ export async function POST(req: Request) {
         .from("industries")
         .select("id, name")
         .eq("database_id", body.database_id)
-        .order("created_at")
+        .order("id")
     );
     existing = await fetchAllRows<{ industry_id: string }>(() =>
       supabase
         .from("segments")
         .select("industry_id")
         .eq("business_model_id", body.business_model_id)
+        .order("industry_id")
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : "取得に失敗しました";
@@ -53,8 +56,14 @@ export async function POST(req: Request) {
   }
   const existingIndustryIds = new Set(existing.map((row) => row.industry_id));
 
+  // industry_idで重複排除(ページング重複や同一項目の保険)
+  const seen = new Set<string>();
   const rows = items
-    .filter((item) => !existingIndustryIds.has(item.id))
+    .filter((item) => {
+      if (existingIndustryIds.has(item.id) || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    })
     .map((item) => ({
       business_model_id: body.business_model_id,
       industry_id: item.id,
@@ -65,12 +74,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ inserted: 0, skipped: items.length });
   }
 
-  // INSERTも大量行をまとめて送ると失敗しうるため、1000件ずつに分割する
+  // 大量行をまとめて送ると失敗しうるため1000件ずつに分割。
+  // 競合(既存行)が混ざってもエラーにしないようupsert+ignoreDuplicatesにする
   const chunkSize = 1000;
   for (let i = 0; i < rows.length; i += chunkSize) {
     const { error } = await supabase
       .from("segments")
-      .insert(rows.slice(i, i + chunkSize));
+      .upsert(rows.slice(i, i + chunkSize), {
+        onConflict: "business_model_id,industry_id",
+        ignoreDuplicates: true,
+      });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

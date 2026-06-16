@@ -24,7 +24,11 @@ export async function POST(req: Request) {
   try {
     // SELECTは既定で最大1000行のため全件ページングで取得する
     existing = await fetchAllRows<{ name: string }>(() =>
-      supabase.from("industries").select("name").eq("database_id", databaseId)
+      supabase
+        .from("industries")
+        .select("name")
+        .eq("database_id", databaseId)
+        .order("id")
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : "取得に失敗しました";

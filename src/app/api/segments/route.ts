@@ -9,6 +9,7 @@ export async function GET() {
         .from("segments")
         .select("*, business_models(*), industries(*, industry_databases(name))")
         .order("priority", { ascending: false })
+        .order("id")
     );
     return NextResponse.json(data);
   } catch (e) {
