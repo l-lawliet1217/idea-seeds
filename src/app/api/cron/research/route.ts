@@ -6,7 +6,8 @@ import { searchGbizByName } from "@/lib/gbizinfo";
 import { researchSegment, loadExistingCompanyKeys, recheckCompany } from "@/lib/research";
 import { enrichOneCompany } from "@/lib/enrich";
 import { researchKeymanForCompany } from "@/lib/keyman";
-import { JobKind, JobMode, ALL_PHASES, fetchPendingUnits, countPendingUnits } from "@/lib/jobs";
+import { JobKind, JobMode, ALL_PHASES, USD_JPY, fetchPendingUnits, countPendingUnits } from "@/lib/jobs";
+import { getPipelineSettings, todaySpendUsd } from "@/lib/pipeline";
 
 export const maxDuration = 300;
 
@@ -56,7 +57,8 @@ export async function GET(req: Request) {
     .order("created_at")
     .limit(1)
     .maybeSingle();
-  if (!candidate) return NextResponse.json({ idle: true });
+  // 手動の範囲指定ジョブが無ければ、常駐パイプライン(自動収集)を回す
+  if (!candidate) return runStandingPipeline(req, supabase, secret);
 
   // 原子的にロック取得: queued、または heartbeat が古い running のみ claim できる
   const { data: claimed } = await supabase
@@ -278,6 +280,123 @@ async function processUnit(
     }
     return { ok: false, inserted: 0, cost: 0 };
   }
+}
+
+// 常駐パイプライン: 自動収集ONかつ予算内なら、未処理を①→②→(承認時③)へ自動で進める。
+// 多重起動は pipeline_settings.locked_until で防ぐ(手動ジョブのような専用テーブルは持たない)。
+async function runStandingPipeline(
+  req: Request,
+  supabase: SupabaseClient,
+  secret: string | undefined
+) {
+  const settings = await getPipelineSettings(supabase);
+  if (!settings.enabled) return NextResponse.json({ idle: true });
+
+  // ロック取得(他ワーカーが実行中ならスキップ)
+  const lockUntil = new Date(Date.now() + BUDGET_MS + 30_000).toISOString();
+  const nowIso = new Date().toISOString();
+  const { data: locked } = await supabase
+    .from("pipeline_settings")
+    .update({ locked_until: lockUntil })
+    .eq("id", 1)
+    .or(`locked_until.is.null,locked_until.lt.${nowIso}`)
+    .select("id")
+    .maybeSingle();
+  if (!locked) return NextResponse.json({ busy: true });
+
+  try {
+    const budgetUsd =
+      settings.daily_budget_jpy > 0 ? settings.daily_budget_jpy / USD_JPY : Infinity;
+    const spentBeforeUsd = await todaySpendUsd(supabase);
+    if (spentBeforeUsd >= budgetUsd) {
+      return NextResponse.json({
+        paused: "budget",
+        spent_jpy: Math.round(spentBeforeUsd * USD_JPY),
+      });
+    }
+
+    const serpOk = !serpConfigError();
+    let gbizOk: boolean | null = null;
+    const stages: JobKind[] = ["research", "enrich"];
+    if (settings.keyman_enabled) stages.push("keyman");
+
+    const filter = { business_model_id: null, database_id: null };
+    let dedup: Dedup = null;
+    const start = Date.now();
+    let runCostUsd = 0;
+    let processed = 0;
+    let didWork = false;
+
+    while (Date.now() - start < BUDGET_MS) {
+      if (spentBeforeUsd + runCostUsd >= budgetUsd) break;
+
+      // 手動ジョブが投入されたら譲る(二重処理防止)
+      const { count: jobCount } = await supabase
+        .from("research_jobs")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["queued", "running"]);
+      if (jobCount && jobCount > 0) break;
+
+      // 実行可能で未処理のあるステージを優先順(①→②→③)に探す
+      let stageKind: JobKind | null = null;
+      let units: Record<string, unknown>[] = [];
+      for (const s of stages) {
+        if ((s === "research" || s === "keyman") && !serpOk) continue;
+        if (s === "enrich") {
+          if (gbizOk === null) {
+            try {
+              await searchGbizByName("トヨタ自動車");
+              gbizOk = true;
+            } catch {
+              gbizOk = false;
+            }
+          }
+          if (!gbizOk) continue;
+        }
+        const u = await fetchPendingUnits(supabase, s, filter, CONCURRENCY[s]);
+        if (u.length > 0) {
+          stageKind = s;
+          units = u;
+          break;
+        }
+      }
+      if (!stageKind) break; // どのステージも未処理なし
+
+      if (stageKind === "research" && !dedup) {
+        dedup = await loadExistingCompanyKeys(supabase);
+      }
+      const results = await Promise.all(
+        units.map((x) => processUnit(supabase, stageKind as JobKind, x, dedup))
+      );
+      for (const r of results) {
+        processed++;
+        runCostUsd += r.cost;
+        didWork = true;
+      }
+    }
+
+    if (didWork) kickSelf(req, secret); // まだ残っていれば即継続(失敗しても毎分Cronが継続)
+    return NextResponse.json({
+      pipeline: true,
+      processed,
+      spent_jpy: Math.round((spentBeforeUsd + runCostUsd) * USD_JPY),
+      budget_jpy: settings.daily_budget_jpy,
+    });
+  } finally {
+    await supabase.from("pipeline_settings").update({ locked_until: null }).eq("id", 1);
+  }
+}
+
+function kickSelf(req: Request, secret: string | undefined) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 3000);
+  const origin = new URL(req.url).origin;
+  return fetch(`${origin}/api/cron/research`, {
+    headers: secret ? { authorization: `Bearer ${secret}` } : {},
+    signal: controller.signal,
+  })
+    .catch(() => {})
+    .finally(() => clearTimeout(t));
 }
 
 async function failJob(supabase: SupabaseClient, id: string, message: string) {

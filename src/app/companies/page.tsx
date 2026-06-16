@@ -31,6 +31,31 @@ export default function CompaniesPage() {
   const [progress, setProgress] = useState("");
   const [maxSegments, setMaxSegments] = useState(500);
   const [jobId, setJobId] = useState<string | null>(null);
+
+  type PipelineState = {
+    settings: { enabled: boolean; keyman_enabled: boolean; daily_budget_jpy: number };
+    funnel: {
+      segments_total: number;
+      segments_done: number;
+      companies_total: number;
+      companies_enriched: number;
+      companies_keyman: number;
+      companies_candidate: number;
+      companies_excluded: number;
+    };
+    today_spent_jpy: number;
+    manual_job_active: boolean;
+  };
+  const [pipeline, setPipeline] = useState<PipelineState | null>(null);
+  const [budgetInput, setBudgetInput] = useState<number>(1000);
+
+  const loadPipeline = useCallback(async () => {
+    const data = await fetch("/api/pipeline").then((r) => r.json()).catch(() => null);
+    if (data && data.settings) {
+      setPipeline(data);
+      setBudgetInput(data.settings.daily_budget_jpy);
+    }
+  }, []);
   const [error, setError] = useState("");
   const [monthUsd, setMonthUsd] = useState<number | null>(null);
   const [serpSearches, setSerpSearches] = useState<number | null>(null);
@@ -47,6 +72,27 @@ export default function CompaniesPage() {
   useEffect(() => {
     loadUsage();
   }, [loadUsage]);
+
+  // 自動収集の設定・ファネル・当日支出を定期更新(稼働状況を可視化)
+  useEffect(() => {
+    loadPipeline();
+    const t = setInterval(loadPipeline, 15000);
+    return () => clearInterval(t);
+  }, [loadPipeline]);
+
+  async function updatePipeline(patch: Record<string, unknown>) {
+    const res = await fetch("/api/pipeline", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error ?? "設定の更新に失敗しました");
+      return;
+    }
+    loadPipeline();
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -352,9 +398,7 @@ export default function CompaniesPage() {
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">
-            AI企業リサーチ(ビジネスモデル×特化先のサイトをWeb検索で発掘)
-          </h2>
+          <h2 className="text-sm font-semibold">AI企業リサーチ</h2>
           {monthUsd !== null && (
             <span className="text-xs text-gray-400">
               今月のAI利用額: ${monthUsd.toFixed(2)}
@@ -367,7 +411,91 @@ export default function CompaniesPage() {
             </span>
           )}
         </div>
-        <div className="flex flex-wrap gap-2 items-center text-sm">
+
+        {/* 自動収集パネル(常駐パイプライン) */}
+        {pipeline && (
+          <div className="border border-gray-200 rounded-lg p-3 space-y-3 bg-gray-50">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={pipeline.settings.enabled}
+                  onChange={(e) => updatePipeline({ enabled: e.target.checked })}
+                  className="h-4 w-4"
+                />
+                自動収集 {pipeline.settings.enabled ? "ON" : "OFF"}
+              </label>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full ${
+                  pipeline.settings.enabled
+                    ? "bg-green-100 text-green-700"
+                    : "bg-gray-200 text-gray-500"
+                }`}
+              >
+                {pipeline.settings.enabled
+                  ? pipeline.today_spent_jpy >= pipeline.settings.daily_budget_jpy &&
+                    pipeline.settings.daily_budget_jpy > 0
+                    ? "予算到達で休止中"
+                    : "稼働中(毎分自動処理)"
+                  : "停止中"}
+              </span>
+              <label className="flex items-center gap-1 text-sm text-gray-600 ml-auto">
+                日次予算 ¥
+                <input
+                  type="number"
+                  min={0}
+                  step={100}
+                  value={budgetInput}
+                  onChange={(e) => setBudgetInput(Number(e.target.value))}
+                  onBlur={() => {
+                    if (budgetInput !== pipeline.settings.daily_budget_jpy)
+                      updatePipeline({ daily_budget_jpy: budgetInput });
+                  }}
+                  className="w-24 border border-gray-200 rounded-lg px-2 py-1"
+                />
+                <span className="text-xs text-gray-400">
+                  (本日 ¥{pipeline.today_spent_jpy.toLocaleString()})
+                </span>
+              </label>
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-gray-600">
+              <input
+                type="checkbox"
+                checked={pipeline.settings.keyman_enabled}
+                onChange={(e) => updatePipeline({ keyman_enabled: e.target.checked })}
+                className="h-4 w-4"
+              />
+              ③キーマン・ベンダー取得まで自動化する(高コスト。OFFなら①発掘②法人番号取得までで止め、③は手動で承認実行)
+            </label>
+
+            {/* ファネル */}
+            <div className="flex flex-wrap gap-2 text-xs">
+              {[
+                { label: "セグメント", v: `${pipeline.funnel.segments_done}/${pipeline.funnel.segments_total}`, note: "発掘済/全体" },
+                { label: "企業(候補)", v: pipeline.funnel.companies_candidate.toLocaleString() },
+                { label: "法人番号取得", v: pipeline.funnel.companies_enriched.toLocaleString() },
+                { label: "キーマン済", v: pipeline.funnel.companies_keyman.toLocaleString() },
+                { label: "対象外", v: pipeline.funnel.companies_excluded.toLocaleString() },
+              ].map((f) => (
+                <div key={f.label} className="bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+                  <div className="text-gray-400">{f.label}</div>
+                  <div className="text-sm font-semibold text-gray-800">{f.v}</div>
+                </div>
+              ))}
+            </div>
+            {progress && <p className="text-xs text-gray-600">{progress}</p>}
+            <p className="text-xs text-gray-400">
+              ONにすると、毎分サーバーが未処理を自動で①発掘→②法人番号取得→(③はチェック時のみ)へ進めます。日次予算に達すると自動で休止し、翌日(JST)再開します。タブを閉じても動きます。
+            </p>
+          </div>
+        )}
+
+        <details className="text-sm">
+          <summary className="cursor-pointer text-gray-500 select-none">
+            手動実行(範囲指定・過去分の再判定)
+          </summary>
+          <div className="flex flex-wrap gap-2 items-center text-sm mt-3">
           <select
             value={selectedComboKey}
             onChange={(e) => selectCombo(e.target.value)}
@@ -428,19 +556,22 @@ export default function CompaniesPage() {
           >
             過去分を再判定して対象外化(未選択なら全社)
           </button>
-          {researching && (
-            <button
-              onClick={cancelResearch}
-              className="px-3 py-1.5 border border-red-300 text-red-600 rounded-lg"
-            >
-              停止
-            </button>
-          )}
-        </div>
-        {progress && <p className="text-xs text-gray-500">{progress}</p>}
-        <p className="text-xs text-gray-400">
-          「①②③ まとめて実行」は、特化先DB×ビジネスモデルを未選択なら未処理の全社に対し、①Web検索で運営会社を発掘→②gBizINFO(無料)で法人番号・従業員数・資本金を補完→③キーマン・ベンダーをAI調査、をサーバー側で順に実行します(特化先DB×ビジネスモデルを選べばその範囲に限定)。①②③の個別ボタンは選択した範囲のみ実行します。いずれも開始前に対象件数と概算コスト(円・ドル)を確認し、開始後はタブを閉じても継続、再訪で進捗が復元します(同時に1ジョブ・各フェーズ最大2000件/回)。
-        </p>
+            {researching && (
+              <button
+                onClick={cancelResearch}
+                className="px-3 py-1.5 border border-red-300 text-red-600 rounded-lg"
+              >
+                停止
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            特定の特化先DB×ビジネスモデルだけを今すぐ回したいとき用。未選択なら全社が対象。①②③個別/まとめて、過去分の再判定(home再判定で対象外化)を実行できます。開始前に件数と概算コスト(円・ドル)を確認します。自動収集がONのときは、手動ジョブが優先され完了後に自動収集が再開します。
+          </p>
+        </details>
+        {!pipeline && progress && (
+          <p className="text-xs text-gray-500">{progress}</p>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3 items-center bg-white border border-gray-200 rounded-xl p-3 text-sm">
