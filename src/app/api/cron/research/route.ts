@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { serpConfigError } from "@/lib/serp";
 import { searchGbizByName } from "@/lib/gbizinfo";
-import { researchSegment, loadExistingCompanyKeys } from "@/lib/research";
+import { researchSegment, loadExistingCompanyKeys, recheckCompany } from "@/lib/research";
 import { enrichOneCompany } from "@/lib/enrich";
 import { researchKeymanForCompany } from "@/lib/keyman";
 import { JobKind, JobMode, ALL_PHASES, fetchPendingUnits, countPendingUnits } from "@/lib/jobs";
@@ -15,7 +15,12 @@ export const maxDuration = 300;
 // 超過しないよう十分な余裕を残す(180+90=270 < 300)。
 const BUDGET_MS = 180_000;
 const STALE_MS = 180_000; // 実行中ジョブのheartbeatがこれより古ければ別ワーカーが引き取る
-const CONCURRENCY: Record<JobKind, number> = { research: 5, enrich: 2, keyman: 3 };
+const CONCURRENCY: Record<JobKind, number> = {
+  research: 5,
+  enrich: 2,
+  keyman: 3,
+  recheck: 5,
+};
 
 type Job = {
   id: string;
@@ -236,6 +241,18 @@ async function processUnit(
       await supabase.from("companies").update({ enrich_done: true }).eq("id", id);
       return { ok: true, inserted: r.updated ? 1 : 0, cost: 0 };
     }
+    if (kind === "recheck") {
+      const seg = unit.segments as { name?: string } | null;
+      const r = await recheckCompany(supabase, {
+        id,
+        name: unit.name as string,
+        service_name: (unit.service_name as string | null) ?? null,
+        service_url: (unit.service_url as string | null) ?? null,
+        website_url: (unit.website_url as string | null) ?? null,
+        segment_name: seg?.name ?? null,
+      });
+      return { ok: true, inserted: r.excluded ? 1 : 0, cost: r.cost };
+    }
     const r = await researchKeymanForCompany(supabase, {
       id,
       name: unit.name as string,
@@ -254,6 +271,8 @@ async function processUnit(
       await supabase.from("companies").update({ enrich_done: true }).eq("id", id);
     } else if (kind === "keyman") {
       await supabase.from("companies").update({ keyman_research_done: true }).eq("id", id);
+    } else if (kind === "recheck") {
+      await supabase.from("companies").update({ relevance_checked: true }).eq("id", id);
     } else {
       await supabase.from("segments").update({ research_done: true }).eq("id", id);
     }

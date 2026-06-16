@@ -19,6 +19,78 @@ import { normalizeCompanyName } from "@/lib/gbizinfo";
 
 export type ResearchSegment = { id: string; name: string };
 
+export type RecheckCompany = {
+  id: string;
+  name: string;
+  service_name: string | null;
+  service_url: string | null;
+  website_url: string | null;
+  segment_name: string | null;
+};
+
+// 既存の登録済み候補を home(ルート)の h1/description で再判定し、
+// その事業を実際に運営していないと判断したら status='excluded'(対象外)にする。
+// home が取得できない/判定材料が無い場合は安全側で残す(誤除外を避ける)。
+export async function recheckCompany(
+  supabase: SupabaseClient,
+  company: RecheckCompany
+): Promise<{ excluded: boolean; cost: number }> {
+  const finish = async (patch: Record<string, unknown>) => {
+    await supabase
+      .from("companies")
+      .update({
+        relevance_checked: true,
+        updated_at: new Date().toISOString(),
+        ...patch,
+      })
+      .eq("id", company.id);
+  };
+
+  const url = company.service_url ?? company.website_url;
+  if (!url || !company.segment_name) {
+    await finish({});
+    return { excluded: false, cost: 0 };
+  }
+
+  let signals: { title: string | null; h1: string | null; description: string | null } | null =
+    null;
+  try {
+    const origin = new URL(url).origin;
+    const html = await fetchHtml(origin);
+    if (html) signals = extractHomeSignals(html);
+  } catch {
+    signals = null;
+  }
+  if (!signals) {
+    await finish({}); // homeが取れないものは残す
+    return { excluded: false, cost: 0 };
+  }
+
+  const judged = await judgeSiteRelevance(company.segment_name, [
+    {
+      title: company.service_name ?? company.name,
+      url,
+      home_title: signals.title,
+      home_h1: signals.h1,
+      home_description: signals.description,
+    },
+  ]);
+  const cost = await logApiUsage(
+    "recheck",
+    "claude-haiku-4-5",
+    extractUsage(judged.usage),
+    { company_id: company.id, company: company.name }
+  );
+
+  const keep = judged.indices.includes(0);
+  if (!keep) {
+    await finish({ status: "excluded", note: "home再判定で対象外(事業実在性なし)" });
+  } else {
+    await finish({});
+  }
+  return { excluded: !keep, cost };
+}
+
 export type ResearchResult = {
   found: number;
   inserted: number;

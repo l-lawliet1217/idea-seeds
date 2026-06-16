@@ -125,7 +125,7 @@ export default function CompaniesPage() {
     setBusinessModelId(bmId);
   }
 
-  type JobKind = "research" | "enrich" | "keyman";
+  type JobKind = "research" | "enrich" | "keyman" | "recheck";
   type JobMode = JobKind | "all";
   type ResearchJob = {
     id: string;
@@ -145,6 +145,7 @@ export default function CompaniesPage() {
     research: { name: "企業リサーチ", unit: "セグメント", result: "登録社数" },
     enrich: { name: "法人番号・属性取得", unit: "社", result: "更新社数" },
     keyman: { name: "キーマン・ベンダー取得", unit: "社", result: "登録件数" },
+    recheck: { name: "過去分の再判定", unit: "社", result: "対象外化数" },
   };
   const PHASE_NO: Record<string, string> = {
     research: "①リサーチ",
@@ -231,7 +232,9 @@ export default function CompaniesPage() {
   // 実行前にコストを見積もって確認ダイアログを出し、OKならジョブを作成する。
   // kind='all' は特化先DB×ビジネスモデル未選択でも実行可(全社対象)。
   async function startJob(kind: JobMode) {
-    if (kind !== "all" && (!businessModelId || !databaseId)) {
+    // all / recheck は未選択(全社)でも実行可。①②③は範囲選択が必要。
+    const comboOptional = kind === "all" || kind === "recheck";
+    if (!comboOptional && (!businessModelId || !databaseId)) {
       setError("特化先DB × ビジネスモデルを選択してください");
       return;
     }
@@ -417,6 +420,13 @@ export default function CompaniesPage() {
             className="px-4 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40"
           >
             ③ キーマン・ベンダーを取得
+          </button>
+          <button
+            onClick={() => startJob("recheck")}
+            disabled={researching}
+            className="px-4 py-1.5 border border-amber-300 text-amber-700 rounded-lg disabled:opacity-40"
+          >
+            過去分を再判定して対象外化(未選択なら全社)
           </button>
           {researching && (
             <button

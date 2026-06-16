@@ -1,16 +1,22 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { serpCostPerSearch } from "@/lib/usage";
 
-export type JobKind = "research" | "enrich" | "keyman";
+export type JobKind = "research" | "enrich" | "keyman" | "recheck";
 
-export const JOB_KINDS: JobKind[] = ["research", "enrich", "keyman"];
+export const JOB_KINDS: JobKind[] = ["research", "enrich", "keyman", "recheck"];
 
-// 一括ジョブ(kind='all')が順に処理するフェーズ
+// 一括ジョブ(kind='all')が順に処理するフェーズ(recheckは含めない=独立の保守処理)
 export const ALL_PHASES: JobKind[] = ["research", "enrich", "keyman"];
 
-// 受け付けるジョブ種別(単体3種 + 一括)
+// 受け付けるジョブ種別(単体4種 + 一括)
 export type JobMode = JobKind | "all";
-export const JOB_MODES: JobMode[] = ["research", "enrich", "keyman", "all"];
+export const JOB_MODES: JobMode[] = [
+  "research",
+  "enrich",
+  "keyman",
+  "recheck",
+  "all",
+];
 
 // 概算の為替レート(円/USD)。コスト事前通知の円換算に使用。
 export const USD_JPY = 160;
@@ -55,6 +61,26 @@ export async function countPendingUnits(
     return count ?? 0;
   }
 
+  if (kind === "recheck") {
+    // 過去に自動収集した候補(serp_research・候補)のうち未再判定のもの
+    let q = supabase
+      .from("companies")
+      .select("id, segments!inner(business_model_id, industries!inner(database_id))", {
+        count: "exact",
+        head: true,
+      })
+      .eq("relevance_checked", false)
+      .eq("status", "candidate")
+      .eq("source", "serp_research")
+      .not("name", "is", null);
+    if (filter.business_model_id)
+      q = q.eq("segments.business_model_id", filter.business_model_id);
+    if (filter.database_id)
+      q = q.eq("segments.industries.database_id", filter.database_id);
+    const { count } = await q;
+    return count ?? 0;
+  }
+
   // keyman: 社名あり・未調査・架電拒否でない企業
   let q = supabase
     .from("companies")
@@ -78,6 +104,7 @@ export function unitCostUsd(kind: JobKind): number {
   const serp = serpCostPerSearch();
   if (kind === "research") return serp + 0.004; // SERP1回 + Haiku選別 + Sonnet抽出(小)
   if (kind === "enrich") return 0; // gBizINFO(無料)
+  if (kind === "recheck") return 0.0012; // home取得(無料) + Haiku再判定のみ
   return serp * 4 + 0.02; // keyman: SERP4回 + Sonnet
 }
 
@@ -118,6 +145,26 @@ export async function fetchPendingUnits(
       .eq("enrich_done", false)
       .not("name", "is", null)
       .or("corporate_number.is.null,and(employees.is.null,capital_jpy.is.null)")
+      .order("id")
+      .limit(limit);
+    if (filter.business_model_id)
+      q = q.eq("segments.business_model_id", filter.business_model_id);
+    if (filter.database_id)
+      q = q.eq("segments.industries.database_id", filter.database_id);
+    const { data } = await q;
+    return (data ?? []) as Record<string, unknown>[];
+  }
+
+  if (kind === "recheck") {
+    let q = supabase
+      .from("companies")
+      .select(
+        "id, name, service_name, service_url, website_url, segments!inner(name, business_model_id, industries!inner(database_id))"
+      )
+      .eq("relevance_checked", false)
+      .eq("status", "candidate")
+      .eq("source", "serp_research")
+      .not("name", "is", null)
       .order("id")
       .limit(limit);
     if (filter.business_model_id)

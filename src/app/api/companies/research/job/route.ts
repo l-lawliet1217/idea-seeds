@@ -15,6 +15,7 @@ const KIND_EMPTY_MESSAGE: Record<JobMode, string> = {
     "未収集のセグメントがありません(セグメントタブの「企業収集」チェックを外すと再収集できます)",
   enrich: "法人番号・属性の取得対象企業がありません(社名取得済みの企業が対象です)",
   keyman: "キーマン調査の対象企業がありません(社名取得済み・未調査・架電可の企業が対象です)",
+  recheck: "再判定の対象がありません(自動収集の候補企業が対象。すべて再判定済みです)",
   all: "未処理の対象がありません(①〜③すべて処理済みです)",
 };
 
@@ -31,8 +32,8 @@ export async function POST(req: Request) {
     MAX_SEGMENTS_CAP
   );
 
-  // enrich単体以外はSERP設定が必要(all/research/keyman)
-  if (kind !== "enrich") {
+  // enrich/recheckはSERP不要。all/research/keymanはSERP設定が必要
+  if (kind !== "enrich" && kind !== "recheck") {
     const serpConfigErr = serpConfigError();
     if (serpConfigErr) {
       return NextResponse.json({ error: serpConfigErr }, { status: 503 });
@@ -99,7 +100,7 @@ export async function POST(req: Request) {
     .single();
   if (error) {
     const message = /schema cache|does not exist|column .* does not exist/.test(error.message)
-      ? "ジョブ用テーブルが未作成です。マイグレーション 00010_research_jobs.sql / 00011_job_kinds.sql / 00012_job_phase.sql をSupabaseのSQL Editorで適用してください(/setup で確認できます)"
+      ? "ジョブ用テーブル/列が未作成です。マイグレーション 00010〜00013 をSupabaseのSQL Editorで適用してください(/setup で確認できます)"
       : error.message;
     return NextResponse.json({ error: message }, { status: 500 });
   }
