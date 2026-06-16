@@ -142,69 +142,90 @@ export default function IndustriesPage() {
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
         <h2 className="text-sm font-semibold">特化先データベース</h2>
-        <div className="flex flex-wrap gap-2">
-          {databases.map((db) => (
-            <span
-              key={db.id}
-              className={`inline-flex items-center rounded-full border text-sm ${
-                selectedDb === db.id
-                  ? "bg-gray-900 text-white border-gray-900"
-                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-              }`}
-            >
-              {editingDb === db.id ? (
-                <input
-                  autoFocus
-                  value={editingName}
-                  onChange={(e) => setEditingName(e.target.value)}
-                  onBlur={commitEditDatabase}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitEditDatabase();
-                    if (e.key === "Escape") setEditingDb("");
-                  }}
-                  className="my-0.5 ml-1.5 w-48 rounded-md border border-gray-300 bg-white px-2 py-0.5 text-sm text-gray-900"
-                />
-              ) : (
-                <button
-                  onClick={() => setSelectedDb(db.id)}
-                  onDoubleClick={() => startEditDatabase(db)}
-                  title="ダブルクリックで名前を編集"
-                  className="pl-3 pr-1.5 py-1.5"
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-gray-500 text-xs">
+              <tr>
+                <th className="text-left px-4 py-2 font-medium">特化先DB名</th>
+                <th className="text-right px-4 py-2 font-medium w-24">項目数</th>
+                <th className="text-right px-4 py-2 font-medium w-28">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {databases.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="px-4 py-6 text-center text-gray-400">
+                    データベースが未登録です。下のフォームから追加してください
+                  </td>
+                </tr>
+              )}
+              {databases.map((db) => (
+                <tr
+                  key={db.id}
+                  onClick={() => editingDb !== db.id && setSelectedDb(db.id)}
+                  className={`border-t border-gray-100 cursor-pointer ${
+                    selectedDb === db.id ? "bg-gray-900/5" : "hover:bg-gray-50"
+                  }`}
                 >
-                  {db.name}
-                  <span className="ml-1.5 text-xs opacity-60">
+                  <td className="px-4 py-2">
+                    {editingDb === db.id ? (
+                      <input
+                        autoFocus
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onBlur={commitEditDatabase}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitEditDatabase();
+                          if (e.key === "Escape") setEditingDb("");
+                        }}
+                        className="w-64 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
+                      />
+                    ) : (
+                      <span
+                        onDoubleClick={() => startEditDatabase(db)}
+                        title="ダブルクリックで名前を編集"
+                        className={`font-medium ${
+                          selectedDb === db.id ? "text-gray-900" : "text-gray-700"
+                        }`}
+                      >
+                        {db.name}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-500">
                     {db.industries?.[0]?.count ?? 0}
-                  </span>
-                </button>
-              )}
-              {editingDb !== db.id && (
-                <>
-                  <button
-                    onClick={() => startEditDatabase(db)}
-                    title="名前を編集"
-                    className={`px-0.5 py-1.5 text-xs ${
-                      selectedDb === db.id
-                        ? "text-white/60 hover:text-white"
-                        : "text-gray-300 hover:text-gray-700"
-                    }`}
-                  >
-                    ✎
-                  </button>
-                  <button
-                    onClick={() => deleteDatabase(db)}
-                    title="このデータベースを削除"
-                    className={`pr-2.5 pl-0.5 py-1.5 text-xs ${
-                      selectedDb === db.id
-                        ? "text-white/60 hover:text-white"
-                        : "text-gray-300 hover:text-red-600"
-                    }`}
-                  >
-                    ✕
-                  </button>
-                </>
-              )}
-            </span>
-          ))}
+                  </td>
+                  <td className="px-4 py-2 text-right whitespace-nowrap">
+                    {editingDb !== db.id && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startEditDatabase(db);
+                          }}
+                          title="名前を編集"
+                          className="text-xs text-gray-400 hover:text-gray-700 px-1.5"
+                        >
+                          編集
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteDatabase(db);
+                          }}
+                          title="このデータベースを削除"
+                          className="text-xs text-red-500 hover:text-red-700 px-1.5"
+                        >
+                          削除
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
         <form onSubmit={addDatabase} className="flex gap-2 text-sm">
           <input

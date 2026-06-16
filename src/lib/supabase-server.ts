@@ -13,3 +13,26 @@ export function getSupabaseAdmin(): SupabaseClient {
   }
   return _client;
 }
+
+// PostgREST(Supabase)のSELECTは既定で最大1000行しか返さない。
+// .range() で1000件ずつページングし、全行を取得する。
+// build() は呼ばれるたびに新しいクエリビルダを返すこと。
+type Rangeable<T> = {
+  range(
+    from: number,
+    to: number
+  ): PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
+};
+
+export async function fetchAllRows<T>(build: () => Rangeable<T>): Promise<T[]> {
+  const pageSize = 1000;
+  const all: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await build().range(from, from + pageSize - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    all.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return all;
+}

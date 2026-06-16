@@ -1,17 +1,23 @@
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getSupabaseAdmin, fetchAllRows } from "@/lib/supabase-server";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  let query = getSupabaseAdmin()
-    .from("industries")
-    .select("*")
-    .order("created_at");
   const databaseId = searchParams.get("database_id");
-  if (databaseId) query = query.eq("database_id", databaseId);
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  try {
+    // SELECTは既定で最大1000行のため全件ページングで取得する
+    const data = await fetchAllRows(() => {
+      const query = getSupabaseAdmin()
+        .from("industries")
+        .select("*")
+        .order("created_at");
+      return databaseId ? query.eq("database_id", databaseId) : query;
+    });
+    return NextResponse.json(data);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "取得に失敗しました";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {

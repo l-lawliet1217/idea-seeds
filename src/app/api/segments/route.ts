@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { getSupabaseAdmin, fetchAllRows } from "@/lib/supabase-server";
 
 export async function GET() {
-  const { data, error } = await getSupabaseAdmin()
-    .from("segments")
-    .select("*, business_models(*), industries(*, industry_databases(name))")
-    .order("priority", { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  try {
+    // SELECTは既定で最大1000行のため全件ページングで取得する
+    const data = await fetchAllRows(() =>
+      getSupabaseAdmin()
+        .from("segments")
+        .select("*, business_models(*), industries(*, industry_databases(name))")
+        .order("priority", { ascending: false })
+    );
+    return NextResponse.json(data);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "取得に失敗しました";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
