@@ -3,6 +3,32 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 
 type Params = { params: Promise<{ id: string }> };
 
+export async function PATCH(req: Request, { params }: Params) {
+  const { id } = await params;
+  const body = await req.json();
+  const name = body.name?.trim();
+  if (!name) {
+    return NextResponse.json({ error: "name は必須です" }, { status: 400 });
+  }
+  const { data, error } = await getSupabaseAdmin()
+    .from("industry_databases")
+    .update({ name })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) {
+    // name に UNIQUE 制約があるため重複時はわかりやすく返す
+    if (/duplicate key|unique/i.test(error.message)) {
+      return NextResponse.json(
+        { error: `「${name}」は既に存在します` },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json(data);
+}
+
 export async function DELETE(_req: Request, { params }: Params) {
   const { id } = await params;
   const admin = getSupabaseAdmin();

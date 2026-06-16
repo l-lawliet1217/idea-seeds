@@ -9,6 +9,8 @@ export default function IndustriesPage() {
   const [selectedDb, setSelectedDb] = useState("");
   const [items, setItems] = useState<Industry[]>([]);
   const [newDbName, setNewDbName] = useState("");
+  const [editingDb, setEditingDb] = useState("");
+  const [editingName, setEditingName] = useState("");
   const [bulkText, setBulkText] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -78,6 +80,36 @@ export default function IndustriesPage() {
     loadDatabases();
   }
 
+  function startEditDatabase(db: IndustryDatabase) {
+    setEditingDb(db.id);
+    setEditingName(db.name);
+    setError("");
+    setMessage("");
+  }
+
+  async function commitEditDatabase() {
+    const id = editingDb;
+    const name = editingName.trim();
+    const current = databases.find((d) => d.id === id);
+    if (!id || !current) return;
+    if (!name || name === current.name) {
+      setEditingDb("");
+      return;
+    }
+    const res = await fetch(`/api/industry-databases/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error ?? "名前の変更に失敗しました");
+      return;
+    }
+    setEditingDb("");
+    loadDatabases();
+  }
+
   async function deleteDatabase(db: IndustryDatabase) {
     const count = db.industries?.[0]?.count ?? 0;
     if (
@@ -120,15 +152,32 @@ export default function IndustriesPage() {
                   : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
               }`}
             >
-              <button
-                onClick={() => setSelectedDb(db.id)}
-                className="pl-3 pr-1.5 py-1.5"
-              >
-                {db.name}
-                <span className="ml-1.5 text-xs opacity-60">
-                  {db.industries?.[0]?.count ?? 0}
-                </span>
-              </button>
+              {editingDb === db.id ? (
+                <input
+                  autoFocus
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  onBlur={commitEditDatabase}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitEditDatabase();
+                    if (e.key === "Escape") setEditingDb("");
+                  }}
+                  className="my-0.5 ml-1.5 w-48 rounded-md border border-gray-300 bg-white px-2 py-0.5 text-sm text-gray-900"
+                />
+              ) : (
+                <button
+                  onClick={() => setSelectedDb(db.id)}
+                  onDoubleClick={() => startEditDatabase(db)}
+                  title="ダブルクリックで名前を編集"
+                  className="pl-3 pr-1.5 py-1.5"
+                >
+                  {db.name}
+                  <span className="ml-1.5 text-xs opacity-60">
+                    {db.industries?.[0]?.count ?? 0}
+                  </span>
+                </button>
+              )}
+              {editingDb !== db.id && (
               <button
                 onClick={() => deleteDatabase(db)}
                 title="このデータベースを削除"
@@ -140,6 +189,7 @@ export default function IndustriesPage() {
               >
                 ✕
               </button>
+              )}
             </span>
           ))}
         </div>
