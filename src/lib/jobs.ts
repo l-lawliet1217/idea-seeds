@@ -5,6 +5,13 @@ export type JobKind = "research" | "enrich" | "keyman";
 
 export const JOB_KINDS: JobKind[] = ["research", "enrich", "keyman"];
 
+// 一括ジョブ(kind='all')が順に処理するフェーズ
+export const ALL_PHASES: JobKind[] = ["research", "enrich", "keyman"];
+
+// 受け付けるジョブ種別(単体3種 + 一括)
+export type JobMode = JobKind | "all";
+export const JOB_MODES: JobMode[] = ["research", "enrich", "keyman", "all"];
+
 // 概算の為替レート(円/USD)。コスト事前通知の円換算に使用。
 export const USD_JPY = 160;
 

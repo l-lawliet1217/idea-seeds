@@ -126,9 +126,11 @@ export default function CompaniesPage() {
   }
 
   type JobKind = "research" | "enrich" | "keyman";
+  type JobMode = JobKind | "all";
   type ResearchJob = {
     id: string;
-    kind: JobKind;
+    kind: JobMode;
+    phase: string | null;
     status: "queued" | "running" | "done" | "error" | "canceled";
     total: number;
     processed: number;
@@ -144,6 +146,11 @@ export default function CompaniesPage() {
     enrich: { name: "法人番号・属性取得", unit: "社", result: "更新社数" },
     keyman: { name: "キーマン・ベンダー取得", unit: "社", result: "登録件数" },
   };
+  const PHASE_NO: Record<string, string> = {
+    research: "①リサーチ",
+    enrich: "②法人番号取得",
+    keyman: "③キーマン取得",
+  };
 
   const applyJob = useCallback(
     (job: ResearchJob | null) => {
@@ -154,29 +161,30 @@ export default function CompaniesPage() {
       setJobId(job.id);
       const active = job.status === "queued" || job.status === "running";
       setResearching(active);
-      const lbl = JOB_LABELS[job.kind] ?? JOB_LABELS.research;
+      const isAll = job.kind === "all";
+      const phaseKind = (isAll ? job.phase : job.kind) as JobKind;
+      const lbl = JOB_LABELS[phaseKind] ?? JOB_LABELS.research;
+      const head = isAll ? `一括 ${PHASE_NO[job.phase ?? "research"] ?? ""}` : lbl.name;
       const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0;
       const cost = `コスト $${(job.cost_usd ?? 0).toFixed(3)}`;
       const fail = job.failed > 0 ? ` / 失敗 ${job.failed}` : "";
       if (active) {
-        const head = job.status === "queued" ? "待機中" : `${lbl.name}中`;
+        const prefix = job.status === "queued" ? "待機中 " : "";
         setProgress(
-          `${head} ${job.processed}/${job.total}${lbl.unit}(${pct}%) / ${lbl.result} ${job.inserted} / ${cost}${fail}`
+          `${prefix}${head} ${job.processed}/${job.total}${lbl.unit}(${pct}%) / ${lbl.result} ${job.inserted} / ${cost}${fail}`
         );
       } else if (job.status === "done") {
         setProgress(
-          `完了: ${lbl.name} ${job.processed}${lbl.unit}処理、${lbl.result} ${job.inserted}(${cost}${fail})`
+          `完了: ${isAll ? "一括処理" : lbl.name} / 成果 ${job.inserted}(${cost}${fail})`
         );
       } else if (job.status === "canceled") {
-        setProgress(
-          `キャンセルしました(${job.processed}/${job.total}${lbl.unit}処理済み、${lbl.result} ${job.inserted})`
-        );
+        setProgress(`キャンセルしました(成果 ${job.inserted}${fail})`);
       } else if (job.status === "error") {
         setProgress("");
         setError(job.error ?? "ジョブでエラーが発生しました");
       }
     },
-    // JOB_LABELS は固定オブジェクト
+    // JOB_LABELS / PHASE_NO は固定オブジェクト
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -210,22 +218,19 @@ export default function CompaniesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 実行前にコストを見積もって確認ダイアログを出し、OKならジョブを作成する
-  async function startJob(kind: JobKind) {
-    if (!businessModelId || !databaseId) {
+  // 実行前にコストを見積もって確認ダイアログを出し、OKならジョブを作成する。
+  // kind='all' は特化先DB×ビジネスモデル未選択でも実行可(全社対象)。
+  async function startJob(kind: JobMode) {
+    if (kind !== "all" && (!businessModelId || !databaseId)) {
       setError("特化先DB × ビジネスモデルを選択してください");
       return;
     }
     setError("");
-    const lbl = JOB_LABELS[kind];
 
     // 1. コスト事前通知(見積り)
-    const params = new URLSearchParams({
-      kind,
-      business_model_id: businessModelId,
-      database_id: databaseId,
-      max_segments: String(maxSegments),
-    });
+    const params = new URLSearchParams({ kind, max_segments: String(maxSegments) });
+    if (businessModelId) params.set("business_model_id", businessModelId);
+    if (databaseId) params.set("database_id", databaseId);
     setProgress("対象件数・コストを見積り中...");
     const est = await fetch(`/api/companies/research/job/estimate?${params}`)
       .then((r) => r.json())
@@ -235,18 +240,39 @@ export default function CompaniesPage() {
       setError(est?.error ?? "見積りに失敗しました");
       return;
     }
-    if (est.units === 0) {
-      setError(`${lbl.name}: 対象がありません`);
-      return;
-    }
+    const scope =
+      businessModelId && databaseId ? "選択中の特化先DB×ビジネスモデル" : "未処理の全社";
     const costLine =
       est.estimated_cost_usd > 0
         ? `概算コスト 約¥${est.estimated_cost_jpy.toLocaleString()}($${est.estimated_cost_usd.toFixed(3)})`
         : "コスト 無料(gBizINFO)";
-    const ok = window.confirm(
-      `${lbl.name}をバックグラウンドで実行します。\n\n対象: ${est.units}${lbl.unit}(保留 ${est.pending}${lbl.unit})\n${costLine}\n\n開始しますか?`
-    );
-    if (!ok) return;
+
+    let message: string;
+    if (kind === "all") {
+      if (est.units === 0) {
+        setError("一括実行: 未処理の対象がありません");
+        return;
+      }
+      const b = est.breakdown ?? {};
+      message =
+        `①リサーチ→②法人番号→③キーマンを順にバックグラウンド実行します(対象: ${scope})。\n\n` +
+        `① 企業リサーチ: ${b.research ?? 0}セグメント\n` +
+        `② 法人番号・属性: ${b.enrich ?? 0}社(無料)\n` +
+        `③ キーマン・ベンダー: ${b.keyman ?? 0}社\n` +
+        `${costLine}\n` +
+        (est.note ? `\n※${est.note}\n` : "") +
+        `\n開始しますか?`;
+    } else {
+      const lbl = JOB_LABELS[kind];
+      if (est.units === 0) {
+        setError(`${lbl.name}: 対象がありません`);
+        return;
+      }
+      message =
+        `${lbl.name}をバックグラウンドで実行します(対象: ${scope})。\n\n` +
+        `対象: ${est.units}${lbl.unit}(保留 ${est.pending}${lbl.unit})\n${costLine}\n\n開始しますか?`;
+    }
+    if (!window.confirm(message)) return;
 
     // 2. ジョブ作成
     setProgress("ジョブを作成中...");
@@ -255,8 +281,8 @@ export default function CompaniesPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         kind,
-        business_model_id: businessModelId,
-        database_id: databaseId,
+        business_model_id: businessModelId || undefined,
+        database_id: databaseId || undefined,
         max_segments: maxSegments,
       }),
     });
@@ -345,9 +371,16 @@ export default function CompaniesPage() {
             件
           </label>
           <button
-            onClick={() => startJob("research")}
+            onClick={() => startJob("all")}
             disabled={researching}
             className="px-4 py-1.5 bg-gray-900 text-white rounded-lg disabled:opacity-40"
+          >
+            ①②③ まとめて実行(未選択なら全社)
+          </button>
+          <button
+            onClick={() => startJob("research")}
+            disabled={researching}
+            className="px-4 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40"
           >
             ① 企業を検索して登録
           </button>
@@ -376,7 +409,7 @@ export default function CompaniesPage() {
         </div>
         {progress && <p className="text-xs text-gray-500">{progress}</p>}
         <p className="text-xs text-gray-400">
-          選択した特化先DB×ビジネスモデルに対し、3つの処理をサーバー側のバックグラウンドで実行します(同時に1つ)。開始前に対象件数と概算コスト(円・ドル)を確認します。開始後はこのタブを閉じても処理は継続し、再訪すると進捗が表示されます(最大2000件/回)。①Web検索で運営会社を発掘 → ②gBizINFO(無料)で法人番号・従業員数・資本金を補完 → ③キーマン・ベンダーをAI調査、の順に実行します。
+          「①②③ まとめて実行」は、特化先DB×ビジネスモデルを未選択なら未処理の全社に対し、①Web検索で運営会社を発掘→②gBizINFO(無料)で法人番号・従業員数・資本金を補完→③キーマン・ベンダーをAI調査、をサーバー側で順に実行します(特化先DB×ビジネスモデルを選べばその範囲に限定)。①②③の個別ボタンは選択した範囲のみ実行します。いずれも開始前に対象件数と概算コスト(円・ドル)を確認し、開始後はタブを閉じても継続、再訪で進捗が復元します(同時に1ジョブ・各フェーズ最大2000件/回)。
         </p>
       </div>
 

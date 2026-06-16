@@ -6,7 +6,7 @@ import { searchGbizByName } from "@/lib/gbizinfo";
 import { researchSegment, loadExistingCompanyKeys } from "@/lib/research";
 import { enrichOneCompany } from "@/lib/enrich";
 import { researchKeymanForCompany } from "@/lib/keyman";
-import { JobKind, fetchPendingUnits } from "@/lib/jobs";
+import { JobKind, JobMode, ALL_PHASES, fetchPendingUnits, countPendingUnits } from "@/lib/jobs";
 
 export const maxDuration = 300;
 
@@ -16,9 +16,11 @@ const CONCURRENCY: Record<JobKind, number> = { research: 5, enrich: 2, keyman: 3
 
 type Job = {
   id: string;
-  kind: JobKind;
+  kind: JobMode;
+  phase: string | null;
   business_model_id: string | null;
   database_id: string | null;
+  max_segments: number;
   total: number;
   processed: number;
   inserted: number;
@@ -26,7 +28,7 @@ type Job = {
   cost_usd: number;
 };
 
-type UnitOutcome = { ok: boolean; inserted: number; cost: number };
+type Dedup = { domains: Set<string>; names: Set<string> } | null;
 
 // Vercel Cron(毎分)またはジョブ作成時のキックから呼ばれる。CRON_SECRETで保護。
 export async function GET(req: Request) {
@@ -59,36 +61,69 @@ export async function GET(req: Request) {
   if (!claimed) return NextResponse.json({ busy: true });
 
   const job = claimed as Job;
-  const kind: JobKind = job.kind ?? "research";
-
-  // 事前チェック(全件失敗を防ぐ)
-  if (kind === "enrich") {
-    try {
-      await searchGbizByName("トヨタ自動車");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await failJob(supabase, job.id, `gBizINFOへの接続に失敗: ${message}`);
-      return NextResponse.json({ error: message }, { status: 503 });
-    }
-  } else {
-    const serpConfigErr = serpConfigError();
-    if (serpConfigErr) {
-      await failJob(supabase, job.id, serpConfigErr);
-      return NextResponse.json({ error: serpConfigErr }, { status: 503 });
-    }
-  }
+  const isAll = job.kind === "all";
+  const phases: JobKind[] = isAll ? ALL_PHASES : [job.kind as JobKind];
+  const filter = {
+    business_model_id: job.business_model_id,
+    database_id: job.database_id,
+  };
 
   const start = Date.now();
-  let processed = job.processed;
-  let inserted = job.inserted;
+  let processed = job.processed; // 現フェーズの処理数
+  let phaseCap = job.total; // 現フェーズの上限
+  let inserted = job.inserted; // 全フェーズ累計
   let failed = job.failed;
   let cost = job.cost_usd;
 
-  // research の重複判定キーは1呼び出しにつき1回だけ読み込み、登録分を追記して共有する
-  const dedup = kind === "research" ? await loadExistingCompanyKeys(supabase) : null;
-  const concurrency = CONCURRENCY[kind];
+  let phaseIdx = isAll ? Math.max(0, ALL_PHASES.indexOf((job.phase as JobKind) ?? "research")) : 0;
+  let dedup: Dedup = null;
+  let gbizChecked = false;
 
-  while (Date.now() - start < BUDGET_MS && processed < job.total) {
+  const advancePhase = async () => {
+    phaseIdx++;
+    if (isAll && phaseIdx < phases.length) {
+      processed = 0;
+      const pending = await countPendingUnits(supabase, phases[phaseIdx], filter);
+      phaseCap = Math.min(pending, job.max_segments);
+      await supabase
+        .from("research_jobs")
+        .update({
+          phase: phases[phaseIdx],
+          processed: 0,
+          total: phaseCap,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
+    }
+  };
+
+  while (Date.now() - start < BUDGET_MS && phaseIdx < phases.length) {
+    const phaseKind = phases[phaseIdx];
+
+    // フェーズ別の事前チェック
+    if (phaseKind === "enrich") {
+      if (!gbizChecked) {
+        try {
+          await searchGbizByName("トヨタ自動車");
+          gbizChecked = true;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          await failJob(supabase, job.id, `gBizINFOへの接続に失敗: ${message}`);
+          return NextResponse.json({ error: message }, { status: 503 });
+        }
+      }
+    } else {
+      const serpConfigErr = serpConfigError();
+      if (serpConfigErr) {
+        await failJob(supabase, job.id, serpConfigErr);
+        return NextResponse.json({ error: serpConfigErr }, { status: 503 });
+      }
+      if (phaseKind === "research" && !dedup) {
+        dedup = await loadExistingCompanyKeys(supabase);
+      }
+    }
+
+    // キャンセル確認
     const { data: state } = await supabase
       .from("research_jobs")
       .select("status")
@@ -98,20 +133,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ canceled: true });
     }
 
-    const batchSize = Math.min(concurrency, job.total - processed);
-    const units = await fetchPendingUnits(
-      supabase,
-      kind,
-      { business_model_id: job.business_model_id, database_id: job.database_id },
-      batchSize
-    );
+    if (processed >= phaseCap) {
+      await advancePhase();
+      continue;
+    }
+
+    const batchSize = Math.min(CONCURRENCY[phaseKind], phaseCap - processed);
+    const units = await fetchPendingUnits(supabase, phaseKind, filter, batchSize);
     if (units.length === 0) {
-      processed = job.total; // 未処理が尽きた
-      break;
+      await advancePhase();
+      continue;
     }
 
     const results = await Promise.all(
-      units.map((unit) => processUnit(supabase, kind, unit, dedup))
+      units.map((unit) => processUnit(supabase, phaseKind, unit, dedup))
     );
     for (const x of results) {
       processed++;
@@ -124,23 +159,27 @@ export async function GET(req: Request) {
       .from("research_jobs")
       .update({
         processed,
+        total: phaseCap,
         inserted,
         failed,
         cost_usd: cost,
+        phase: isAll ? phaseKind : job.phase,
         heartbeat_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", job.id);
   }
 
-  const done = processed >= job.total;
+  const done = phaseIdx >= phases.length;
   const finishedAt = new Date().toISOString();
-  // 未完了ならロックを解放(status=queued)して、再キック/次のCronが即座に継続できるようにする
+  // 未完了ならロックを解放(status=queued)して、再キック/次のCronが即継続できるようにする
   await supabase
     .from("research_jobs")
     .update({
       status: done ? "done" : "queued",
+      phase: isAll ? (done ? "done" : phases[Math.min(phaseIdx, phases.length - 1)]) : job.phase,
       processed,
+      total: phaseCap,
       inserted,
       failed,
       cost_usd: cost,
@@ -165,7 +204,7 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ job_id: job.id, kind, processed, inserted, failed, done });
+  return NextResponse.json({ job_id: job.id, kind: job.kind, inserted, failed, done });
 }
 
 // 1単位を処理する。done系フラグを必ず立てて再試行ループを防ぐ。
@@ -173,8 +212,8 @@ async function processUnit(
   supabase: SupabaseClient,
   kind: JobKind,
   unit: Record<string, unknown>,
-  dedup: { domains: Set<string>; names: Set<string> } | null
-): Promise<UnitOutcome> {
+  dedup: Dedup
+): Promise<{ ok: boolean; inserted: number; cost: number }> {
   const id = unit.id as string;
   try {
     if (kind === "research") {
@@ -194,7 +233,6 @@ async function processUnit(
       await supabase.from("companies").update({ enrich_done: true }).eq("id", id);
       return { ok: true, inserted: r.updated ? 1 : 0, cost: 0 };
     }
-    // keyman
     const r = await researchKeymanForCompany(supabase, {
       id,
       name: unit.name as string,
@@ -209,7 +247,6 @@ async function processUnit(
       cost: r.cost_usd,
     };
   } catch {
-    // 失敗した単位も done にして再試行ループを防ぐ
     if (kind === "enrich") {
       await supabase.from("companies").update({ enrich_done: true }).eq("id", id);
     } else if (kind === "keyman") {
