@@ -10,7 +10,10 @@ import { JobKind, JobMode, ALL_PHASES, fetchPendingUnits, countPendingUnits } fr
 
 export const maxDuration = 300;
 
-const BUDGET_MS = 240_000; // この時間を超えたら一旦終了し、再キック/次のCronで継続
+// この時間を超えたら一旦終了し、再キック/次のCronで継続。
+// maxDuration(300s)に対し、1バッチ(並列の最遅~90s)が予算境界で始まっても
+// 超過しないよう十分な余裕を残す(180+90=270 < 300)。
+const BUDGET_MS = 180_000;
 const STALE_MS = 180_000; // 実行中ジョブのheartbeatがこれより古ければ別ワーカーが引き取る
 const CONCURRENCY: Record<JobKind, number> = { research: 5, enrich: 2, keyman: 3 };
 

@@ -59,6 +59,7 @@ async function fetchSerpApiResults(
 
   const res = await fetch(`https://serpapi.com/search.json?${params}`, {
     cache: "no-store",
+    signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) {
     throw new Error(`SERP APIエラー: ${res.status} ${await res.text()}`);
@@ -105,6 +106,7 @@ async function fetchDataforSeoResults(
         "Content-Type": "application/json",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(30000),
       body: JSON.stringify([
         {
           keyword,

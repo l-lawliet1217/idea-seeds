@@ -189,19 +189,29 @@ export default function CompaniesPage() {
     []
   );
 
-  // ジョブ状態をポーリング(タブを閉じて再訪しても進捗を復元)
+  // ジョブ状態をポーリング(タブを閉じて再訪しても進捗を復元)。
+  // 一時的な取得失敗ではポーリングを止めず、進行中の間はずっと監視し続ける。
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
     let prevActive = false;
     const poll = async () => {
-      const job: ResearchJob | null = await fetch("/api/companies/research/job")
-        .then((r) => r.json())
-        .catch(() => null);
+      let ok = true;
+      let job: ResearchJob | null = null;
+      try {
+        const res = await fetch("/api/companies/research/job");
+        job = await res.json();
+      } catch {
+        ok = false; // ネットワーク等の一時失敗
+      }
       if (stopped) return;
+      if (!ok) {
+        // 失敗時は状態を変えずに再試行(進行中の監視を止めない)
+        timer = setTimeout(poll, 5000);
+        return;
+      }
       applyJob(job);
       const active = !!job && (job.status === "queued" || job.status === "running");
-      // 進行中→完了に変わった瞬間に一覧を更新
       if (prevActive && !active) {
         load();
         loadUsage();
@@ -298,9 +308,19 @@ export default function CompaniesPage() {
   }
 
   async function pollJobOnce() {
-    const job: ResearchJob | null = await fetch("/api/companies/research/job")
-      .then((r) => r.json())
-      .catch(() => null);
+    let ok = true;
+    let job: ResearchJob | null = null;
+    try {
+      const res = await fetch("/api/companies/research/job");
+      job = await res.json();
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      // 一時失敗では監視を止めず再試行
+      setTimeout(pollJobOnce, 5000);
+      return;
+    }
     applyJob(job);
     if (job && (job.status === "queued" || job.status === "running")) {
       setTimeout(pollJobOnce, 4000);
