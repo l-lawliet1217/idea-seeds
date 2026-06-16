@@ -4,30 +4,28 @@ import { getSupabaseAdmin } from "@/lib/supabase-server";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const supabase = getSupabaseAdmin();
+
+  const businessModelId = searchParams.get("business_model_id");
+  const databaseId = searchParams.get("database_id");
+
+  // ビジネスモデル / 特化先DB での絞り込みは埋め込みinner joinでDB側で行う。
+  // (該当セグメントID群をINで渡すと、大規模DBで巨大なクエリになり破綻するため)
+  const filterByBmDb = !!(businessModelId || databaseId);
+  const select = filterByBmDb
+    ? "*, segments!inner(id, name, business_model_id, industries!inner(database_id))"
+    : "*, segments(id, name)";
+
+  const limit = Math.min(Math.max(1, Number(searchParams.get("limit")) || 1000), 5000);
   let query = supabase
     .from("companies")
-    .select("*, segments(id, name)")
+    .select(select)
     .order("created_at", { ascending: false })
-    .limit(500);
+    .limit(limit);
 
   const segmentId = searchParams.get("segment_id");
   if (segmentId) query = query.eq("segment_id", segmentId);
-
-  // ビジネスモデル / 特化先DB での絞り込み(該当セグメント群に展開)
-  const businessModelId = searchParams.get("business_model_id");
-  const databaseId = searchParams.get("database_id");
-  if (businessModelId || databaseId) {
-    let segQuery = supabase.from("segments").select("id, industries!inner(database_id)");
-    if (businessModelId) segQuery = segQuery.eq("business_model_id", businessModelId);
-    if (databaseId) segQuery = segQuery.eq("industries.database_id", databaseId);
-    const { data: segs, error: segError } = await segQuery;
-    if (segError) {
-      return NextResponse.json({ error: segError.message }, { status: 500 });
-    }
-    const ids = (segs ?? []).map((s) => s.id);
-    if (ids.length === 0) return NextResponse.json([]);
-    query = query.in("segment_id", ids);
-  }
+  if (businessModelId) query = query.eq("segments.business_model_id", businessModelId);
+  if (databaseId) query = query.eq("segments.industries.database_id", databaseId);
 
   const status = searchParams.get("status");
   if (status) query = query.eq("status", status);

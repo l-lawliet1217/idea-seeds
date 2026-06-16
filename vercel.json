@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/research",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/serp",
       "schedule": "0 18 * * *"
     },

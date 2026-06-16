@@ -29,6 +29,8 @@ export default function CompaniesPage() {
 
   const [researching, setResearching] = useState(false);
   const [progress, setProgress] = useState("");
+  const [maxSegments, setMaxSegments] = useState(500);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [monthUsd, setMonthUsd] = useState<number | null>(null);
   const [serpSearches, setSerpSearches] = useState<number | null>(null);
@@ -127,80 +129,129 @@ export default function CompaniesPage() {
     setBusinessModelId(bmId);
   }
 
-  // 選択中のビジネスモデル×特化先DBに該当するセグメント
-  const targetSegments = segments.filter(
-    (seg) =>
-      (!businessModelId || seg.business_model_id === businessModelId) &&
-      (!databaseId || seg.industries?.database_id === databaseId)
+  type ResearchJob = {
+    id: string;
+    status: "queued" | "running" | "done" | "error" | "canceled";
+    total: number;
+    processed: number;
+    inserted: number;
+    failed: number;
+    cost_usd: number;
+    error: string | null;
+  };
+
+  const applyJob = useCallback(
+    (job: ResearchJob | null) => {
+      if (!job) {
+        setResearching(false);
+        return;
+      }
+      setJobId(job.id);
+      const active = job.status === "queued" || job.status === "running";
+      setResearching(active);
+      const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0;
+      const cost = `コスト $${(job.cost_usd ?? 0).toFixed(3)}`;
+      const fail = job.failed > 0 ? ` / 失敗 ${job.failed}` : "";
+      if (active) {
+        const head = job.status === "queued" ? "待機中" : "リサーチ中";
+        setProgress(
+          `${head} ${job.processed}/${job.total}セグメント(${pct}%) / 登録 ${job.inserted}社 / ${cost}${fail}`
+        );
+      } else if (job.status === "done") {
+        setProgress(
+          `完了: ${job.processed}セグメント処理、${job.inserted}社を登録しました(${cost}${fail})`
+        );
+      } else if (job.status === "canceled") {
+        setProgress(
+          `キャンセルしました(${job.processed}/${job.total}セグメント処理済み、${job.inserted}社登録)`
+        );
+      } else if (job.status === "error") {
+        setProgress("");
+        setError(job.error ?? "リサーチジョブでエラーが発生しました");
+      }
+    },
+    []
   );
+
+  // ジョブ状態をポーリング(タブを閉じて再訪しても進捗を復元)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+    let prevActive = false;
+    const poll = async () => {
+      const job: ResearchJob | null = await fetch("/api/companies/research/job")
+        .then((r) => r.json())
+        .catch(() => null);
+      if (stopped) return;
+      applyJob(job);
+      const active = !!job && (job.status === "queued" || job.status === "running");
+      // 進行中→完了に変わった瞬間に一覧を更新
+      if (prevActive && !active) {
+        load();
+        loadUsage();
+        loadSegments();
+      }
+      prevActive = active;
+      if (active) timer = setTimeout(poll, 4000);
+    };
+    poll();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function research() {
     if (!businessModelId || !databaseId) {
       setError("特化先DB × ビジネスモデルを選択してください");
       return;
     }
-    // 企業収集フラグが立っていないセグメントから順に、1回の実行で最大100セグメントを並列5で調査
-    const queue = targetSegments.filter((seg) => !seg.research_done).slice(0, 100);
-    if (queue.length === 0) {
-      setError(
-        "未収集のセグメントがありません(全セグメント収集済み。再収集したい場合はセグメントタブの「企業収集」チェックを外してください)"
-      );
+    setError("");
+    setProgress("ジョブを作成中...");
+    const res = await fetch("/api/companies/research/job", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        business_model_id: businessModelId,
+        database_id: databaseId,
+        max_segments: maxSegments,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setProgress("");
+      setError(data.error ?? "ジョブの作成に失敗しました");
       return;
     }
-
     setResearching(true);
-    setError("");
-    const CONCURRENCY = 5;
-    let total = 0;
-    let runCost = 0;
-    let completed = 0;
-    let failures = 0;
-    let cursor = 0;
+    applyJob(data);
+    // 作成直後から進捗ポーリングを開始
+    pollJobOnce();
+  }
 
-    const updateProgress = () => {
-      setProgress(
-        `処理中 ${completed}/${queue.length}(並列${CONCURRENCY}) / 登録 ${total}社 / 累計コスト $${runCost.toFixed(3)}${failures > 0 ? ` / 失敗 ${failures}件` : ""}`
-      );
-    };
-    updateProgress();
+  async function pollJobOnce() {
+    const job: ResearchJob | null = await fetch("/api/companies/research/job")
+      .then((r) => r.json())
+      .catch(() => null);
+    applyJob(job);
+    if (job && (job.status === "queued" || job.status === "running")) {
+      setTimeout(pollJobOnce, 4000);
+    } else {
+      load();
+      loadUsage();
+      loadSegments();
+    }
+  }
 
-    const worker = async () => {
-      while (true) {
-        const i = cursor++;
-        if (i >= queue.length) return;
-        try {
-          const res = await fetch("/api/companies/research", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ segment_id: queue[i].id }),
-          });
-          const data = await res.json();
-          if (res.ok) {
-            total += data.inserted ?? 0;
-            runCost += data.cost_usd ?? 0;
-          } else {
-            failures++;
-            setError(data.error ?? "一部のセグメントで失敗しました");
-          }
-        } catch {
-          failures++;
-        }
-        completed++;
-        updateProgress();
-        if (completed % 10 === 0) load();
-      }
-    };
-    await Promise.all(
-      Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker)
-    );
-
-    setProgress(
-      `完了: ${queue.length}セグメントを調査し、${total}社を登録しました(今回のコスト: $${runCost.toFixed(3)}${failures > 0 ? ` / 失敗 ${failures}件` : ""})`
-    );
-    setResearching(false);
-    load();
-    loadUsage();
-    loadSegments();
+  async function cancelResearch() {
+    if (!jobId) return;
+    await fetch("/api/companies/research/job", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: jobId }),
+    });
+    setProgress("キャンセルを要求しました(処理中のバッチ完了後に停止します)");
   }
 
   async function enrich() {
@@ -345,13 +396,34 @@ export default function CompaniesPage() {
               </option>
             ))}
           </select>
+          <label className="flex items-center gap-1 text-gray-500">
+            最大
+            <input
+              type="number"
+              min={1}
+              max={2000}
+              value={maxSegments}
+              onChange={(e) => setMaxSegments(Number(e.target.value))}
+              disabled={researching}
+              className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 disabled:opacity-40"
+            />
+            セグメント
+          </label>
           <button
             onClick={research}
             disabled={researching || enriching}
             className="px-4 py-1.5 bg-gray-900 text-white rounded-lg disabled:opacity-40"
           >
-            {researching ? "調査中..." : "検索して登録(100セグメントまで・並列5)"}
+            {researching ? "実行中..." : "バックグラウンドで収集開始"}
           </button>
+          {researching && (
+            <button
+              onClick={cancelResearch}
+              className="px-3 py-1.5 border border-red-300 text-red-600 rounded-lg"
+            >
+              停止
+            </button>
+          )}
           <button
             onClick={enrich}
             disabled={researching || enriching || keymanRunning}
@@ -371,7 +443,7 @@ export default function CompaniesPage() {
         {enrichMessage && <p className="text-xs text-gray-500">{enrichMessage}</p>}
         {keymanMessage && <p className="text-xs text-gray-500">{keymanMessage}</p>}
         <p className="text-xs text-gray-400">
-          Google検索の上位5件から該当サイトを選別し、サイトのフッターから運営会社名を抽出して登録します(1セグメント数秒・AIはサイト選別のみで$0.001以下)。法人番号・従業員数・資本金は右のボタンでgBizINFO(経産省・無料)から補完します(一度に30社ずつ)
+          サーバー側のバックグラウンドで収集します。開始後はこのタブを閉じても処理は継続し、再訪すると進捗が表示されます(最大2000セグメント・約5社/セグメント)。Google検索の上位から該当サイトを選別し、フッターから運営会社名を抽出して登録します。法人番号・従業員数・資本金は右のボタンでgBizINFO(経産省・無料)から補完します(一度に30社ずつ)
         </p>
       </div>
 
