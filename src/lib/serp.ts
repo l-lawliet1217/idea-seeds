@@ -292,6 +292,47 @@ export function extractSiteTitle(html: string): string | null {
   return (head || title).slice(0, 60) || null;
 }
 
+// サイトのhome(トップ)から、事業内容の判定に使う代表的なテキストを抜き出す。
+// title全文 / 最初のh1 / meta description(無ければog:description)。
+export type HomeSignals = {
+  title: string | null;
+  h1: string | null;
+  description: string | null;
+};
+
+function stripTags(s: string): string {
+  return s
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function metaContent(html: string, attr: string, value: string): string | null {
+  // <meta name="description" content="..."> / <meta content="..." name="description"> 両順序に対応
+  const re1 = new RegExp(
+    `<meta[^>]*${attr}=["']${value}["'][^>]*content=["']([^"']*)["']`,
+    "i"
+  );
+  const re2 = new RegExp(
+    `<meta[^>]*content=["']([^"']*)["'][^>]*${attr}=["']${value}["']`,
+    "i"
+  );
+  const m = html.match(re1) ?? html.match(re2);
+  return m ? m[1].replace(/\s+/g, " ").trim() : null;
+}
+
+export function extractHomeSignals(html: string): HomeSignals {
+  const titleM = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleM ? titleM[1].replace(/\s+/g, " ").trim().slice(0, 120) : null;
+  const h1M = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const h1 = h1M ? stripTags(h1M[1]).slice(0, 120) || null : null;
+  const description =
+    (metaContent(html, "name", "description") ??
+      metaContent(html, "property", "og:description"))?.slice(0, 200) ?? null;
+  return { title, h1, description };
+}
+
 // 全角数字・各種ハイフン・括弧を半角へ寄せる(電話番号抽出の前処理)
 function normalizePhoneChars(s: string): string {
   return s

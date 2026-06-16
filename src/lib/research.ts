@@ -7,6 +7,7 @@ import {
 import {
   collectCompanyEvidence,
   extractDomain,
+  extractHomeSignals,
   extractPhoneNumber,
   extractSiteTitle,
   fetchHtml,
@@ -85,12 +86,30 @@ export async function researchSegment(
     return true;
   });
 
-  // 2. 該当しそうなサイトをHaikuで選別
+  // 2. 各候補のhome(ルート)を取得し、title/h1/descriptionで「本当にその事業を運営しているか」を判定。
+  //    検索結果の下層ページのタイトルだけ一致している誤検出(自社採用ページ等)を弾く。
   let picked = candidates;
   if (candidates.length > 0) {
+    const homeSignals = await Promise.all(
+      candidates.map(async (c) => {
+        try {
+          const origin = new URL(c.url).origin;
+          const html = await fetchHtml(origin);
+          return html ? extractHomeSignals(html) : null;
+        } catch {
+          return null;
+        }
+      })
+    );
     const judged = await judgeSiteRelevance(
       segment.name,
-      candidates.map((c) => ({ title: c.title, url: c.url }))
+      candidates.map((c, i) => ({
+        title: c.title,
+        url: c.url,
+        home_title: homeSignals[i]?.title ?? null,
+        home_h1: homeSignals[i]?.h1 ?? null,
+        home_description: homeSignals[i]?.description ?? null,
+      }))
     );
     costUsd += await logApiUsage(
       "research_fast",

@@ -360,20 +360,40 @@ export type SiteRelevanceResult = {
 
 export async function judgeSiteRelevance(
   segmentName: string,
-  sites: { title: string | null; url: string }[]
+  sites: {
+    title: string | null;
+    url: string;
+    home_title?: string | null;
+    home_h1?: string | null;
+    home_description?: string | null;
+  }[]
 ): Promise<SiteRelevanceResult> {
+  const hasHome = sites.some(
+    (s) => s.home_title || s.home_h1 || s.home_description
+  );
   const list = sites
-    .map((s, i) => `[${i}] ${s.title ?? "(タイトル不明)"} - ${s.url}`)
-    .join("\n");
+    .map((s, i) => {
+      const lines = [`[${i}] 検索結果タイトル: ${s.title ?? "(不明)"}`, `    URL: ${s.url}`];
+      if (s.home_title) lines.push(`    homeタイトル: ${s.home_title}`);
+      if (s.home_h1) lines.push(`    home h1: ${s.home_h1}`);
+      if (s.home_description) lines.push(`    home説明: ${s.home_description}`);
+      return lines.join("\n");
+    })
+    .join("\n\n");
+  const homeNote = hasHome
+    ? `判断は検索結果のタイトルだけでなく、必ず home の情報(タイトル/h1/説明)で「その会社・サービスが本当にこの事業を行っているか」を確認すること。
+特に、検索結果の下層ページのタイトルだけが一致していても、homeを見ると無関係な事業や単なる自社採用ページに過ぎない場合は必ず除外すること。`
+    : "";
   const res = await getClient().messages.create({
     model: "claude-haiku-4-5",
     max_tokens: 200,
     messages: [
       {
         role: "user",
-        content: `以下はGoogle検索「${segmentName}」の上位結果です。
-このうち「${segmentName}」という特化型サービスのサイト本体に該当しそうなものの番号だけを選んでください。
-除外: ニュース記事、ブログ、まとめ/比較記事、求人広告の個別ページ、大手総合サイト、Wikipedia、運営会社のコーポレートサイト(会社案内が主目的のサイト。サービスサイト本体のみを選ぶ)。
+        content: `以下はGoogle検索「${segmentName}」の上位結果と、各サイトのトップページ(home)の実際の情報です。
+このうち、運営者が「${segmentName}」を実際の事業・サービスとして提供しているサイト本体だけの番号を選んでください。
+${homeNote}
+除外: ニュース記事、ブログ、まとめ/比較記事、求人広告の個別ページ、大手総合サイト、Wikipedia、運営会社のコーポレートサイト(会社案内が主目的のサイト)。
 
 ${list}
 
