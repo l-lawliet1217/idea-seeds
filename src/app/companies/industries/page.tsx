@@ -178,17 +178,30 @@ export default function IndustriesPage() {
                 </button>
               )}
               {editingDb !== db.id && (
-              <button
-                onClick={() => deleteDatabase(db)}
-                title="このデータベースを削除"
-                className={`pr-2.5 pl-0.5 py-1.5 text-xs ${
-                  selectedDb === db.id
-                    ? "text-white/60 hover:text-white"
-                    : "text-gray-300 hover:text-red-600"
-                }`}
-              >
-                ✕
-              </button>
+                <>
+                  <button
+                    onClick={() => startEditDatabase(db)}
+                    title="名前を編集"
+                    className={`px-0.5 py-1.5 text-xs ${
+                      selectedDb === db.id
+                        ? "text-white/60 hover:text-white"
+                        : "text-gray-300 hover:text-gray-700"
+                    }`}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    onClick={() => deleteDatabase(db)}
+                    title="このデータベースを削除"
+                    className={`pr-2.5 pl-0.5 py-1.5 text-xs ${
+                      selectedDb === db.id
+                        ? "text-white/60 hover:text-white"
+                        : "text-gray-300 hover:text-red-600"
+                    }`}
+                  >
+                    ✕
+                  </button>
+                </>
               )}
             </span>
           ))}
