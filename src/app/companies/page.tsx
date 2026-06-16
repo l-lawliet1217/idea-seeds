@@ -35,10 +35,6 @@ export default function CompaniesPage() {
   const [monthUsd, setMonthUsd] = useState<number | null>(null);
   const [serpSearches, setSerpSearches] = useState<number | null>(null);
   const [serpUsd, setSerpUsd] = useState<number | null>(null);
-  const [enriching, setEnriching] = useState(false);
-  const [enrichMessage, setEnrichMessage] = useState("");
-  const [keymanRunning, setKeymanRunning] = useState(false);
-  const [keymanMessage, setKeymanMessage] = useState("");
 
   const loadUsage = useCallback(async () => {
     const data = await fetch("/api/usage").then((r) => r.json()).catch(() => null);
@@ -129,8 +125,10 @@ export default function CompaniesPage() {
     setBusinessModelId(bmId);
   }
 
+  type JobKind = "research" | "enrich" | "keyman";
   type ResearchJob = {
     id: string;
+    kind: JobKind;
     status: "queued" | "running" | "done" | "error" | "canceled";
     total: number;
     processed: number;
@@ -138,6 +136,13 @@ export default function CompaniesPage() {
     failed: number;
     cost_usd: number;
     error: string | null;
+  };
+
+  // kind別のラベル(単位・成果物の名称)
+  const JOB_LABELS: Record<JobKind, { name: string; unit: string; result: string }> = {
+    research: { name: "企業リサーチ", unit: "セグメント", result: "登録社数" },
+    enrich: { name: "法人番号・属性取得", unit: "社", result: "更新社数" },
+    keyman: { name: "キーマン・ベンダー取得", unit: "社", result: "登録件数" },
   };
 
   const applyJob = useCallback(
@@ -149,27 +154,30 @@ export default function CompaniesPage() {
       setJobId(job.id);
       const active = job.status === "queued" || job.status === "running";
       setResearching(active);
+      const lbl = JOB_LABELS[job.kind] ?? JOB_LABELS.research;
       const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0;
       const cost = `コスト $${(job.cost_usd ?? 0).toFixed(3)}`;
       const fail = job.failed > 0 ? ` / 失敗 ${job.failed}` : "";
       if (active) {
-        const head = job.status === "queued" ? "待機中" : "リサーチ中";
+        const head = job.status === "queued" ? "待機中" : `${lbl.name}中`;
         setProgress(
-          `${head} ${job.processed}/${job.total}セグメント(${pct}%) / 登録 ${job.inserted}社 / ${cost}${fail}`
+          `${head} ${job.processed}/${job.total}${lbl.unit}(${pct}%) / ${lbl.result} ${job.inserted} / ${cost}${fail}`
         );
       } else if (job.status === "done") {
         setProgress(
-          `完了: ${job.processed}セグメント処理、${job.inserted}社を登録しました(${cost}${fail})`
+          `完了: ${lbl.name} ${job.processed}${lbl.unit}処理、${lbl.result} ${job.inserted}(${cost}${fail})`
         );
       } else if (job.status === "canceled") {
         setProgress(
-          `キャンセルしました(${job.processed}/${job.total}セグメント処理済み、${job.inserted}社登録)`
+          `キャンセルしました(${job.processed}/${job.total}${lbl.unit}処理済み、${lbl.result} ${job.inserted})`
         );
       } else if (job.status === "error") {
         setProgress("");
-        setError(job.error ?? "リサーチジョブでエラーが発生しました");
+        setError(job.error ?? "ジョブでエラーが発生しました");
       }
     },
+    // JOB_LABELS は固定オブジェクト
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -202,17 +210,51 @@ export default function CompaniesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function research() {
+  // 実行前にコストを見積もって確認ダイアログを出し、OKならジョブを作成する
+  async function startJob(kind: JobKind) {
     if (!businessModelId || !databaseId) {
       setError("特化先DB × ビジネスモデルを選択してください");
       return;
     }
     setError("");
+    const lbl = JOB_LABELS[kind];
+
+    // 1. コスト事前通知(見積り)
+    const params = new URLSearchParams({
+      kind,
+      business_model_id: businessModelId,
+      database_id: databaseId,
+      max_segments: String(maxSegments),
+    });
+    setProgress("対象件数・コストを見積り中...");
+    const est = await fetch(`/api/companies/research/job/estimate?${params}`)
+      .then((r) => r.json())
+      .catch(() => null);
+    setProgress("");
+    if (!est || est.error) {
+      setError(est?.error ?? "見積りに失敗しました");
+      return;
+    }
+    if (est.units === 0) {
+      setError(`${lbl.name}: 対象がありません`);
+      return;
+    }
+    const costLine =
+      est.estimated_cost_usd > 0
+        ? `概算コスト 約¥${est.estimated_cost_jpy.toLocaleString()}($${est.estimated_cost_usd.toFixed(3)})`
+        : "コスト 無料(gBizINFO)";
+    const ok = window.confirm(
+      `${lbl.name}をバックグラウンドで実行します。\n\n対象: ${est.units}${lbl.unit}(保留 ${est.pending}${lbl.unit})\n${costLine}\n\n開始しますか?`
+    );
+    if (!ok) return;
+
+    // 2. ジョブ作成
     setProgress("ジョブを作成中...");
     const res = await fetch("/api/companies/research/job", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        kind,
         business_model_id: businessModelId,
         database_id: databaseId,
         max_segments: maxSegments,
@@ -226,7 +268,6 @@ export default function CompaniesPage() {
     }
     setResearching(true);
     applyJob(data);
-    // 作成直後から進捗ポーリングを開始
     pollJobOnce();
   }
 
@@ -252,112 +293,6 @@ export default function CompaniesPage() {
       body: JSON.stringify({ id: jobId }),
     });
     setProgress("キャンセルを要求しました(処理中のバッチ完了後に停止します)");
-  }
-
-  async function enrich() {
-    setEnriching(true);
-    setError("");
-    setEnrichMessage("gBizINFOから取得中...(1社あたり1秒程度)");
-    try {
-      const res = await fetch("/api/companies/enrich", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          business_model_id: businessModelId || undefined,
-          database_id: databaseId || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "取得に失敗しました");
-        setEnrichMessage("");
-      } else {
-        const parts = [
-          `対象${data.targets}社中、${data.updated}社を更新`,
-          `うちgBizINFOに属性データ未収録: ${data.no_data ?? 0}件`,
-          `該当なし: ${data.not_found}件`,
-          `法人重複: ${data.duplicated ?? 0}件`,
-          `失敗: ${data.failed}件`,
-          `残り未処理: ${data.remaining}件`,
-        ];
-        let message = `取得完了: ${parts.join(" / ")}`;
-        if (data.targets === 0) {
-          message =
-            "対象企業がありません(運営会社名が取得できている&法人番号が未取得の企業が対象です)";
-        } else if (data.first_error) {
-          message += ` / 最初のエラー: ${data.first_error}`;
-        }
-        setEnrichMessage(message);
-        load();
-      }
-    } catch {
-      setError("通信エラーが発生しました");
-      setEnrichMessage("");
-    }
-    setEnriching(false);
-  }
-
-  async function keymanResearch() {
-    // 表示中の絞り込み範囲のうち、社名があり未調査の企業を最大20社・並列3で処理
-    const targets = companies
-      .filter((c) => c.name && !c.keyman_research_done && !c.do_not_contact)
-      .slice(0, 20);
-    if (targets.length === 0) {
-      setKeymanMessage(
-        "対象企業がありません(社名取得済み・未調査の企業が対象です)"
-      );
-      return;
-    }
-    setKeymanRunning(true);
-    setError("");
-    const CONCURRENCY = 3;
-    let completed = 0;
-    let contactsTotal = 0;
-    let relationsTotal = 0;
-    let runCost = 0;
-    let failures = 0;
-    let cursor = 0;
-
-    const update = () =>
-      setKeymanMessage(
-        `キーマン調査中 ${completed}/${targets.length}(並列${CONCURRENCY}) / 担当者 ${contactsTotal}名・パートナー ${relationsTotal}社 / 累計コスト $${runCost.toFixed(3)}${failures > 0 ? ` / 失敗 ${failures}件` : ""}`
-      );
-    update();
-
-    const worker = async () => {
-      while (true) {
-        const i = cursor++;
-        if (i >= targets.length) return;
-        try {
-          const res = await fetch(`/api/companies/${targets[i].id}/keyman`, {
-            method: "POST",
-          });
-          const data = await res.json();
-          if (res.ok) {
-            contactsTotal += data.contacts_inserted ?? 0;
-            relationsTotal += data.relations_inserted ?? 0;
-            runCost += data.cost_usd ?? 0;
-          } else {
-            failures++;
-            setError(data.error ?? "一部の企業で失敗しました");
-          }
-        } catch {
-          failures++;
-        }
-        completed++;
-        update();
-      }
-    };
-    await Promise.all(
-      Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker)
-    );
-
-    setKeymanMessage(
-      `キーマン調査完了: ${targets.length}社 / 担当者 ${contactsTotal}名・パートナー ${relationsTotal}社を登録(コスト $${runCost.toFixed(3)}${failures > 0 ? ` / 失敗 ${failures}件` : ""})`
-    );
-    setKeymanRunning(false);
-    load();
-    loadUsage();
   }
 
   return (
@@ -407,14 +342,28 @@ export default function CompaniesPage() {
               disabled={researching}
               className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 disabled:opacity-40"
             />
-            セグメント
+            件
           </label>
           <button
-            onClick={research}
-            disabled={researching || enriching}
+            onClick={() => startJob("research")}
+            disabled={researching}
             className="px-4 py-1.5 bg-gray-900 text-white rounded-lg disabled:opacity-40"
           >
-            {researching ? "実行中..." : "バックグラウンドで収集開始"}
+            ① 企業を検索して登録
+          </button>
+          <button
+            onClick={() => startJob("enrich")}
+            disabled={researching}
+            className="px-4 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40"
+          >
+            ② 法人番号・従業員数・資本金を取得(無料)
+          </button>
+          <button
+            onClick={() => startJob("keyman")}
+            disabled={researching}
+            className="px-4 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40"
+          >
+            ③ キーマン・ベンダーを取得
           </button>
           {researching && (
             <button
@@ -424,26 +373,10 @@ export default function CompaniesPage() {
               停止
             </button>
           )}
-          <button
-            onClick={enrich}
-            disabled={researching || enriching || keymanRunning}
-            className="px-4 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40"
-          >
-            {enriching ? "取得中..." : "法人番号・従業員数・資本金を取得(無料)"}
-          </button>
-          <button
-            onClick={keymanResearch}
-            disabled={researching || enriching || keymanRunning}
-            className="px-4 py-1.5 border border-gray-300 rounded-lg disabled:opacity-40"
-          >
-            {keymanRunning ? "調査中..." : "キーマン・ベンダーを取得(20社ずつ)"}
-          </button>
         </div>
         {progress && <p className="text-xs text-gray-500">{progress}</p>}
-        {enrichMessage && <p className="text-xs text-gray-500">{enrichMessage}</p>}
-        {keymanMessage && <p className="text-xs text-gray-500">{keymanMessage}</p>}
         <p className="text-xs text-gray-400">
-          サーバー側のバックグラウンドで収集します。開始後はこのタブを閉じても処理は継続し、再訪すると進捗が表示されます(最大2000セグメント・約5社/セグメント)。Google検索の上位から該当サイトを選別し、フッターから運営会社名を抽出して登録します。法人番号・従業員数・資本金は右のボタンでgBizINFO(経産省・無料)から補完します(一度に30社ずつ)
+          選択した特化先DB×ビジネスモデルに対し、3つの処理をサーバー側のバックグラウンドで実行します(同時に1つ)。開始前に対象件数と概算コスト(円・ドル)を確認します。開始後はこのタブを閉じても処理は継続し、再訪すると進捗が表示されます(最大2000件/回)。①Web検索で運営会社を発掘 → ②gBizINFO(無料)で法人番号・従業員数・資本金を補完 → ③キーマン・ベンダーをAI調査、の順に実行します。
         </p>
       </div>
 

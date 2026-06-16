@@ -47,7 +47,7 @@ export function estimateCostUsd(model: string, u: UsageRecord): number {
 
 // SERP検索1回あたりの概算単価(USD)。プロバイダ・プランで異なるため環境変数で上書き可能。
 // 既定: SerpAPI $0.015($75/5,000検索相当)、DataforSEO $0.002(Live Advanced相当)
-function serpCostPerSearch(): number {
+export function serpCostPerSearch(): number {
   const override = Number(process.env.SERP_COST_PER_SEARCH);
   if (override > 0) return override;
   // 後方互換: 旧変数名 SERPAPI_COST_PER_SEARCH も参照

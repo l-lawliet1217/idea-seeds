@@ -1,15 +1,24 @@
 import { NextResponse, after } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { serpConfigError } from "@/lib/serp";
+import { JOB_KINDS, JobKind, countPendingUnits } from "@/lib/jobs";
 
 const MAX_SEGMENTS_CAP = 2000;
 
-// バックグラウンドの企業リサーチジョブを作成する。
-// 選択中の特化先DB×ビジネスモデルの未収集セグメントを、サーバー(Cron)が順次処理する。
+const KIND_EMPTY_MESSAGE: Record<JobKind, string> = {
+  research:
+    "未収集のセグメントがありません(セグメントタブの「企業収集」チェックを外すと再収集できます)",
+  enrich: "法人番号・属性の取得対象企業がありません(社名取得済みの企業が対象です)",
+  keyman: "キーマン調査の対象企業がありません(社名取得済み・未調査・架電可の企業が対象です)",
+};
+
+// バックグラウンドジョブを作成する(kind: research / enrich / keyman)。
+// 選択中の特化先DB×ビジネスモデルの未処理分を、サーバー(Cron)が順次処理する。
 export async function POST(req: Request) {
   const body = await req.json();
   const businessModelId: string | undefined = body.business_model_id || undefined;
   const databaseId: string | undefined = body.database_id || undefined;
+  const kind: JobKind = JOB_KINDS.includes(body.kind) ? body.kind : "research";
   if (!businessModelId || !databaseId) {
     return NextResponse.json(
       { error: "business_model_id と database_id は必須です" },
@@ -21,9 +30,12 @@ export async function POST(req: Request) {
     MAX_SEGMENTS_CAP
   );
 
-  const serpConfigErr = serpConfigError();
-  if (serpConfigErr) {
-    return NextResponse.json({ error: serpConfigErr }, { status: 503 });
+  // enrichはgBizINFO(SERP不要)。research/keymanはSERP設定が必要
+  if (kind !== "enrich") {
+    const serpConfigErr = serpConfigError();
+    if (serpConfigErr) {
+      return NextResponse.json({ error: serpConfigErr }, { status: 503 });
+    }
   }
 
   const supabase = getSupabaseAdmin();
@@ -37,32 +49,30 @@ export async function POST(req: Request) {
     .maybeSingle();
   if (active) {
     return NextResponse.json(
-      { error: "実行中のリサーチジョブがあります。完了またはキャンセル後に開始してください", job_id: active.id },
+      { error: "実行中のジョブがあります。完了またはキャンセル後に開始してください", job_id: active.id },
       { status: 409 }
     );
   }
 
-  // 未収集セグメント数(countは1000行上限の影響を受けない)
-  const { count, error: countError } = await supabase
-    .from("segments")
-    .select("id, industries!inner(database_id)", { count: "exact", head: true })
-    .eq("research_done", false)
-    .eq("business_model_id", businessModelId)
-    .eq("industries.database_id", databaseId);
-  if (countError) {
-    return NextResponse.json({ error: countError.message }, { status: 500 });
+  let count: number;
+  try {
+    count = await countPendingUnits(supabase, kind, {
+      business_model_id: businessModelId,
+      database_id: databaseId,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "対象件数の取得に失敗しました";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-  const total = Math.min(count ?? 0, maxSegments);
+  const total = Math.min(count, maxSegments);
   if (total === 0) {
-    return NextResponse.json(
-      { error: "未収集のセグメントがありません(セグメントタブの「企業収集」チェックを外すと再収集できます)" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: KIND_EMPTY_MESSAGE[kind] }, { status: 400 });
   }
 
   const { data: job, error } = await supabase
     .from("research_jobs")
     .insert({
+      kind,
       business_model_id: businessModelId,
       database_id: databaseId,
       max_segments: maxSegments,
@@ -72,8 +82,8 @@ export async function POST(req: Request) {
     .select()
     .single();
   if (error) {
-    const message = /schema cache|does not exist/.test(error.message)
-      ? "research_jobs テーブルが未作成です。マイグレーション 00010_research_jobs.sql をSupabaseのSQL Editorで適用してください(/setup で確認できます)"
+    const message = /schema cache|does not exist|column .* does not exist/.test(error.message)
+      ? "ジョブ用テーブルが未作成です。マイグレーション 00010_research_jobs.sql と 00011_job_kinds.sql をSupabaseのSQL Editorで適用してください(/setup で確認できます)"
       : error.message;
     return NextResponse.json({ error: message }, { status: 500 });
   }
