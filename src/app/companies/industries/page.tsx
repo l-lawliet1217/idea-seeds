@@ -78,6 +78,29 @@ export default function IndustriesPage() {
     loadDatabases();
   }
 
+  async function deleteDatabase(db: IndustryDatabase) {
+    const count = db.industries?.[0]?.count ?? 0;
+    if (
+      !window.confirm(
+        `特化先データベース「${db.name}」を削除しますか?\n紐づく特化先項目${count}件も削除されます。この操作は取り消せません。`
+      )
+    )
+      return;
+    setError("");
+    setMessage("");
+    const res = await fetch(`/api/industry-databases/${db.id}`, {
+      method: "DELETE",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error ?? "削除に失敗しました");
+      return;
+    }
+    setMessage(`「${db.name}」を削除しました(項目${data.removed_items}件)`);
+    if (selectedDb === db.id) setSelectedDb("");
+    loadDatabases();
+  }
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">企業管理</h1>
@@ -89,20 +112,35 @@ export default function IndustriesPage() {
         <h2 className="text-sm font-semibold">特化先データベース</h2>
         <div className="flex flex-wrap gap-2">
           {databases.map((db) => (
-            <button
+            <span
               key={db.id}
-              onClick={() => setSelectedDb(db.id)}
-              className={`px-3 py-1.5 rounded-full border text-sm ${
+              className={`inline-flex items-center rounded-full border text-sm ${
                 selectedDb === db.id
                   ? "bg-gray-900 text-white border-gray-900"
                   : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
               }`}
             >
-              {db.name}
-              <span className="ml-1.5 text-xs opacity-60">
-                {db.industries?.[0]?.count ?? 0}
-              </span>
-            </button>
+              <button
+                onClick={() => setSelectedDb(db.id)}
+                className="pl-3 pr-1.5 py-1.5"
+              >
+                {db.name}
+                <span className="ml-1.5 text-xs opacity-60">
+                  {db.industries?.[0]?.count ?? 0}
+                </span>
+              </button>
+              <button
+                onClick={() => deleteDatabase(db)}
+                title="このデータベースを削除"
+                className={`pr-2.5 pl-0.5 py-1.5 text-xs ${
+                  selectedDb === db.id
+                    ? "text-white/60 hover:text-white"
+                    : "text-gray-300 hover:text-red-600"
+                }`}
+              >
+                ✕
+              </button>
+            </span>
           ))}
         </div>
         <form onSubmit={addDatabase} className="flex gap-2 text-sm">
